@@ -16,12 +16,16 @@
 package common
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"reflect"
 
 	"github.com/guacsec/guac/pkg/assembler"
 	model "github.com/guacsec/guac/pkg/assembler/clients/generated"
+	"github.com/guacsec/guac/pkg/handler/processor"
 )
 
+// TODO: change the DependencyType based on the relationship, currently set to unknown
 func GetIsDep(foundNode *model.PkgInputSpec, relatedPackNodes []*model.PkgInputSpec, relatedFileNodes []*model.PkgInputSpec, justification string) (*assembler.IsDependencyIngest, error) {
 	if len(relatedFileNodes) > 0 {
 		for _, rfileNode := range relatedFileNodes {
@@ -30,8 +34,9 @@ func GetIsDep(foundNode *model.PkgInputSpec, relatedPackNodes []*model.PkgInputS
 				Pkg:    foundNode,
 				DepPkg: rfileNode,
 				IsDependency: &model.IsDependencyInputSpec{
-					Justification: justification,
-					VersionRange:  *rfileNode.Version,
+					DependencyType: model.DependencyTypeUnknown,
+					Justification:  justification,
+					VersionRange:   *rfileNode.Version,
 				},
 			}, nil
 		}
@@ -41,8 +46,9 @@ func GetIsDep(foundNode *model.PkgInputSpec, relatedPackNodes []*model.PkgInputS
 				Pkg:    foundNode,
 				DepPkg: rpackNode,
 				IsDependency: &model.IsDependencyInputSpec{
-					Justification: justification,
-					VersionRange:  *rpackNode.Version,
+					DependencyType: model.DependencyTypeUnknown,
+					Justification:  justification,
+					VersionRange:   *rpackNode.Version,
 				},
 			}, nil
 
@@ -51,17 +57,19 @@ func GetIsDep(foundNode *model.PkgInputSpec, relatedPackNodes []*model.PkgInputS
 	return nil, nil
 }
 
-func CreateTopLevelIsDeps(toplevel *model.PkgInputSpec, packages map[string][]*model.PkgInputSpec, files map[string][]*model.PkgInputSpec, justification string) []assembler.IsDependencyIngest {
+// TODO: change the DependencyType based on the relationship, currently set to unknown
+func CreateTopLevelIsDeps(topLevel *model.PkgInputSpec, packages map[string][]*model.PkgInputSpec, files map[string][]*model.PkgInputSpec, justification string) []assembler.IsDependencyIngest {
 	isDeps := []assembler.IsDependencyIngest{}
 	for _, packNodes := range packages {
 		for _, packNode := range packNodes {
-			if !reflect.DeepEqual(packNode, toplevel) {
+			if !reflect.DeepEqual(packNode, topLevel) {
 				p := assembler.IsDependencyIngest{
-					Pkg:    toplevel,
+					Pkg:    topLevel,
 					DepPkg: packNode,
 					IsDependency: &model.IsDependencyInputSpec{
-						Justification: justification,
-						VersionRange:  *packNode.Version,
+						DependencyType: model.DependencyTypeUnknown,
+						Justification:  justification,
+						VersionRange:   *packNode.Version,
 					},
 				}
 				isDeps = append(isDeps, p)
@@ -72,11 +80,12 @@ func CreateTopLevelIsDeps(toplevel *model.PkgInputSpec, packages map[string][]*m
 	for _, fileNodes := range files {
 		for _, fileNode := range fileNodes {
 			p := assembler.IsDependencyIngest{
-				Pkg:    toplevel,
+				Pkg:    topLevel,
 				DepPkg: fileNode,
 				IsDependency: &model.IsDependencyInputSpec{
-					Justification: justification,
-					VersionRange:  *fileNode.Version,
+					DependencyType: model.DependencyTypeUnknown,
+					Justification:  justification,
+					VersionRange:   *fileNode.Version,
 				},
 			}
 			isDeps = append(isDeps, p)
@@ -84,4 +93,19 @@ func CreateTopLevelIsDeps(toplevel *model.PkgInputSpec, packages map[string][]*m
 	}
 
 	return isDeps
+}
+
+func CreateTopLevelHasSBOM(topLevel *model.PkgInputSpec, sbomDoc *processor.Document) assembler.HasSBOMIngest {
+	sha256sum := sha256.Sum256(sbomDoc.Blob)
+	hash := hex.EncodeToString(sha256sum[:])
+	return assembler.HasSBOMIngest{
+		Pkg: topLevel,
+		HasSBOM: &model.HasSBOMInputSpec{
+			Uri:              sbomDoc.SourceInformation.Source,
+			Algorithm:        "sha256",
+			Digest:           hash,
+			DownloadLocation: sbomDoc.SourceInformation.Source,
+			Annotations:      []model.AnnotationInputSpec{},
+		},
+	}
 }

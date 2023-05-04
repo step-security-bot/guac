@@ -58,6 +58,155 @@ func Test_depsDevParser_Parse(t *testing.T) {
 		wantPredicates *assembler.IngestPredicates
 		wantErr        bool
 	}{{
+		name: "package NPM React",
+		doc: &processor.Document{
+			Blob:              []byte(testdata.CollectedNPMReact),
+			Type:              processor.DocumentDepsDev,
+			Format:            processor.FormatJSON,
+			SourceInformation: processor.SourceInformation{},
+		},
+		wantPredicates: &assembler.IngestPredicates{
+			IsDependency: []assembler.IsDependencyIngest{
+				{
+					Pkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "loose-envify",
+						Version:   ptrfrom.String("1.4.0"),
+						Subpath:   ptrfrom.String(""),
+					},
+					DepPkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "js-tokens",
+						Version:   ptrfrom.String("4.0.0"),
+						Subpath:   ptrfrom.String(""),
+					},
+					IsDependency: &model.IsDependencyInputSpec{
+						DependencyType: model.DependencyTypeDirect,
+						VersionRange:   "^3.0.0 || ^4.0.0",
+						Justification:  "dependency data collected via deps.dev",
+						Origin:         "",
+						Collector:      "",
+					},
+				}, {
+					Pkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "react",
+						Version:   ptrfrom.String("17.0.0"),
+						Subpath:   ptrfrom.String(""),
+					},
+					DepPkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "loose-envify",
+						Version:   ptrfrom.String("1.4.0"),
+						Subpath:   ptrfrom.String(""),
+					},
+					IsDependency: &model.IsDependencyInputSpec{
+						DependencyType: model.DependencyTypeDirect,
+						VersionRange:   "^1.1.0",
+						Justification:  "dependency data collected via deps.dev",
+						Origin:         "",
+						Collector:      "",
+					},
+				}, {
+					Pkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "react",
+						Version:   ptrfrom.String("17.0.0"),
+						Subpath:   ptrfrom.String(""),
+					},
+					DepPkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "object-assign",
+						Version:   ptrfrom.String("4.1.1"),
+						Subpath:   ptrfrom.String(""),
+					},
+					IsDependency: &model.IsDependencyInputSpec{
+						DependencyType: model.DependencyTypeDirect,
+						VersionRange:   "^4.1.1",
+						Justification:  "dependency data collected via deps.dev",
+						Origin:         "",
+						Collector:      "",
+					},
+				},
+			},
+			HasSourceAt: []assembler.HasSourceAtIngest{
+				{
+					Pkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "react",
+						Version:   ptrfrom.String("17.0.0"),
+						Subpath:   ptrfrom.String(""),
+					},
+					PkgMatchFlag: model.MatchFlags{
+						Pkg: model.PkgMatchTypeAllVersions,
+					},
+					Src: &model.SourceInputSpec{
+						Type:      "git",
+						Namespace: "github.com/facebook",
+						Name:      "react.git",
+					},
+					HasSourceAt: &model.HasSourceAtInputSpec{
+						KnownSince:    tm.UTC(),
+						Justification: "collected via deps.dev",
+						Origin:        "",
+						Collector:     "",
+					},
+				}, {
+					Pkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "js-tokens",
+						Version:   ptrfrom.String("4.0.0"),
+						Subpath:   ptrfrom.String(""),
+					},
+					PkgMatchFlag: model.MatchFlags{
+						Pkg: model.PkgMatchTypeAllVersions,
+					},
+					Src: &model.SourceInputSpec{
+						Type:      "git",
+						Namespace: "github.com/lydell",
+						Name:      "js-tokens.git",
+					},
+					HasSourceAt: &model.HasSourceAtInputSpec{
+						KnownSince:    tm.UTC(),
+						Justification: "collected via deps.dev",
+						Origin:        "",
+						Collector:     "",
+					},
+				}, {
+					Pkg: &model.PkgInputSpec{
+						Type:      "npm",
+						Namespace: ptrfrom.String(""),
+						Name:      "object-assign",
+						Version:   ptrfrom.String("4.1.1"),
+						Subpath:   ptrfrom.String(""),
+					},
+					PkgMatchFlag: model.MatchFlags{
+						Pkg: model.PkgMatchTypeAllVersions,
+					},
+					Src: &model.SourceInputSpec{
+						Type:      "git",
+						Namespace: "github.com/sindresorhus",
+						Name:      "object-assign.git",
+					},
+					HasSourceAt: &model.HasSourceAtInputSpec{
+						KnownSince:    tm.UTC(),
+						Justification: "collected via deps.dev",
+						Origin:        "",
+						Collector:     "",
+					},
+				},
+			},
+		},
+		wantErr: false,
+	}, {
 		name: "package foreign-types",
 		doc: &processor.Document{
 			Blob:              []byte(testdata.CollectedForeignTypes),
@@ -75,27 +224,24 @@ func Test_depsDevParser_Parse(t *testing.T) {
 					},
 					Scorecard: &model.ScorecardInputSpec{
 						Checks: []model.ScorecardCheckInputSpec{
-							{Check: "Code-Review", Score: 2},
-							{Check: "Maintained", Score: 0},
-							{Check: "CII-Best-Practices", Score: 0},
-							{Check: "Vulnerabilities", Score: 10},
+							{Check: "Maintained", Score: 5},
+							{Check: "CII-Best-Practices"},
 							{Check: "Signed-Releases", Score: -1},
-							{Check: "Branch-Protection", Score: 0},
-							{Check: "License", Score: 10},
-							{Check: "Pinned-Dependencies", Score: 7},
-							{Check: "Binary-Artifacts", Score: 10},
-							{Check: "Token-Permissions", Score: 0},
-							{Check: "Dangerous-Workflow", Score: 10},
-							{Check: "SAST", Score: 0},
 							{Check: "Packaging", Score: -1},
-							{Check: "Dependency-Update-Tool", Score: 0},
-							{Check: "Fuzzing", Score: 0},
-							{Check: "Security-Policy", Score: 0},
+							{Check: "Dangerous-Workflow", Score: 10},
+							{Check: "Binary-Artifacts", Score: 10},
+							{Check: "Token-Permissions"},
+							{Check: "Pinned-Dependencies", Score: 7},
+							{Check: "Fuzzing"},
+							{Check: "Vulnerabilities", Score: 10},
+							{Check: "Branch-Protection"},
+							{Check: "License", Score: 10},
+							{Check: "Security-Policy"},
 						},
-						AggregateScore:   3.700000047683716,
+						AggregateScore:   4.599999904632568,
 						TimeScanned:      tm.UTC(),
-						ScorecardVersion: "v4.8.0-78-gfb07860",
-						ScorecardCommit:  "fb07860d86065cdcbd2d0d5c6b998ff4542d53fe",
+						ScorecardVersion: "v4.10.5-77-g6c5de2c",
+						ScorecardCommit:  "6c5de2c32a4b8f60211e8e8eb94f8d3370a11b93",
 						Origin:           "",
 						Collector:        "",
 					},
@@ -107,27 +253,24 @@ func Test_depsDevParser_Parse(t *testing.T) {
 					},
 					Scorecard: &model.ScorecardInputSpec{
 						Checks: []model.ScorecardCheckInputSpec{
-							{Check: "Code-Review", Score: 2},
-							{Check: "Maintained", Score: 0},
-							{Check: "CII-Best-Practices", Score: 0},
-							{Check: "Vulnerabilities", Score: 10},
+							{Check: "Maintained", Score: 5},
+							{Check: "CII-Best-Practices"},
 							{Check: "Signed-Releases", Score: -1},
-							{Check: "Branch-Protection", Score: 0},
-							{Check: "License", Score: 10},
-							{Check: "Pinned-Dependencies", Score: 7},
-							{Check: "Binary-Artifacts", Score: 10},
-							{Check: "Token-Permissions", Score: 0},
-							{Check: "Dangerous-Workflow", Score: 10},
-							{Check: "SAST", Score: 0},
 							{Check: "Packaging", Score: -1},
-							{Check: "Dependency-Update-Tool", Score: 0},
-							{Check: "Fuzzing", Score: 0},
-							{Check: "Security-Policy", Score: 0},
+							{Check: "Dangerous-Workflow", Score: 10},
+							{Check: "Binary-Artifacts", Score: 10},
+							{Check: "Token-Permissions"},
+							{Check: "Pinned-Dependencies", Score: 7},
+							{Check: "Fuzzing"},
+							{Check: "Vulnerabilities", Score: 10},
+							{Check: "Branch-Protection"},
+							{Check: "License", Score: 10},
+							{Check: "Security-Policy"},
 						},
-						AggregateScore:   3.700000047683716,
+						AggregateScore:   4.599999904632568,
 						TimeScanned:      tm.UTC(),
-						ScorecardVersion: "v4.8.0-78-gfb07860",
-						ScorecardCommit:  "fb07860d86065cdcbd2d0d5c6b998ff4542d53fe",
+						ScorecardVersion: "v4.10.5-77-g6c5de2c",
+						ScorecardCommit:  "6c5de2c32a4b8f60211e8e8eb94f8d3370a11b93",
 						Origin:           "",
 						Collector:        "",
 					},
@@ -150,10 +293,11 @@ func Test_depsDevParser_Parse(t *testing.T) {
 						Subpath:   ptrfrom.String(""),
 					},
 					IsDependency: &model.IsDependencyInputSpec{
-						VersionRange:  "0.1.1",
-						Justification: "dependency data collected via deps.dev",
-						Origin:        "",
-						Collector:     "",
+						DependencyType: model.DependencyTypeDirect,
+						VersionRange:   "^0.1",
+						Justification:  "dependency data collected via deps.dev",
+						Origin:         "",
+						Collector:      "",
 					},
 				},
 			},
@@ -232,48 +376,11 @@ func Test_depsDevParser_Parse(t *testing.T) {
 						Subpath:   ptrfrom.String(""),
 					},
 					IsDependency: &model.IsDependencyInputSpec{
-						VersionRange:  "3.0.0",
-						Justification: "dependency data collected via deps.dev",
-						Origin:        "",
-						Collector:     "",
-					},
-				},
-			},
-			CertifyVuln: []assembler.CertifyVulnIngest{
-				{
-					Pkg: &model.PkgInputSpec{
-						Type:      "npm",
-						Namespace: ptrfrom.String(""),
-						Name:      "yargs-parser",
-						Version:   ptrfrom.String("4.2.1"),
-						Subpath:   ptrfrom.String(""),
-					},
-					OSV: &model.OSVInputSpec{
-						OsvId: "GHSA-p9pc-299p-vxgp",
-					},
-					VulnData: &model.VulnerabilityMetaDataInput{
-						TimeScanned:    tm.UTC(),
-						DbUri:          "",
-						DbVersion:      "",
-						ScannerUri:     "osv.dev",
-						ScannerVersion: "",
+						DependencyType: model.DependencyTypeDirect,
+						VersionRange:   "^3.0.0",
+						Justification:  "dependency data collected via deps.dev",
 						Origin:         "",
 						Collector:      "",
-					},
-				},
-			},
-			IsVuln: []assembler.IsVulnIngest{
-				{
-					OSV: &model.OSVInputSpec{
-						OsvId: "GHSA-p9pc-299p-vxgp",
-					},
-					GHSA: &model.GHSAInputSpec{
-						GhsaId: "GHSA-p9pc-299p-vxgp",
-					},
-					IsVuln: &model.IsVulnerabilityInputSpec{
-						Justification: "decoded OSV data collected via deps.dev",
-						Origin:        "",
-						Collector:     "",
 					},
 				},
 			},
@@ -332,11 +439,59 @@ func Test_depsDevParser_Parse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := NewDepsDevParser()
 			if err := d.Parse(ctx, tt.doc); (err != nil) != tt.wantErr {
-				t.Errorf("scorecard.Parse() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("deps.dev.Parse() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			preds := d.GetPredicates(ctx)
 			if d := cmp.Diff(tt.wantPredicates, preds, testdata.IngestPredicatesCmpOpts...); len(d) != 0 {
-				t.Errorf("scorecard.GetPredicate mismatch values (+got, -expected): %s", d)
+				t.Errorf("deps.dev.GetPredicate mismatch values (+got, -expected): %s", d)
+			}
+		})
+	}
+}
+
+func Test_depsDevParser_GetIdentifiers(t *testing.T) {
+	ctx := logging.WithLogger(context.Background())
+
+	tests := []struct {
+		name            string
+		doc             *processor.Document
+		wantIdentifiers *common.IdentifierStrings
+		wantErr         bool
+	}{{
+		name: "package foreign-types",
+		doc: &processor.Document{
+			Blob:              []byte(testdata.CollectedForeignTypes),
+			Type:              processor.DocumentDepsDev,
+			Format:            processor.FormatJSON,
+			SourceInformation: processor.SourceInformation{},
+		},
+		wantIdentifiers: &common.IdentifierStrings{
+			PurlStrings: []string{"pkg:cargo/foreign-types-shared@0.1.1"}},
+		wantErr: false,
+	}, {
+		name: "package yargs-parser",
+		doc: &processor.Document{
+			Blob:              []byte(testdata.CollectedYargsParser),
+			Type:              processor.DocumentDepsDev,
+			Format:            processor.FormatJSON,
+			SourceInformation: processor.SourceInformation{},
+		},
+		wantIdentifiers: &common.IdentifierStrings{
+			PurlStrings: []string{"pkg:npm/camelcase@3.0.0"}},
+		wantErr: false,
+	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewDepsDevParser()
+			if err := d.Parse(ctx, tt.doc); (err != nil) != tt.wantErr {
+				t.Errorf("deps.dev.Parse() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			identifiers, err := d.GetIdentifiers(ctx)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("deps.dev.GetIdentifiers() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if d := cmp.Diff(tt.wantIdentifiers, identifiers); len(d) != 0 {
+				t.Errorf("deps.dev.GetPredicate mismatch values (+got, -expected): %s", d)
 			}
 		})
 	}

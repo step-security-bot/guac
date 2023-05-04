@@ -30,20 +30,27 @@ The rest of the demo will assume you are in the GUAC directory
 cd guac
 ```
 
-## Running the GUAC Server
+## Building the GUAC binaries
 
-The GUAC server can be run in different ways. For this demo, we will use the
-`graphql_playground` command, which sets up a GraphQL endpoint and playground,
-and runs an in-memory backend to store the GUAC graph.
-
-Run this command in a separate terminal and keep running throughout the demo.
+Build the GUAC binaries using the `make` command.
 
 ```bash
-go run ./cmd/graphql_playground
+make
 ```
 
-This will download and build GUAC before running the server. As the data is
-stored in-memory, whenever you restart the server, the graph will be empty.
+## Running the GUAC Server
+
+For this demo, we will use the `guacgql --gql-debug` command, which sets up a
+GraphQL endpoint and playground, and runs an in-memory backend to store the GUAC
+graph. Run this command in a separate terminal (in the same path) and keep it
+running throughout the demo.
+
+```bash
+bin/guacgql --gql-debug
+```
+
+Note: As the data is stored in-memory, whenever you restart the server, the
+graph will be empty.
 
 ## Ingesting the data
 
@@ -51,8 +58,10 @@ To ingest the data, we will use the help of the `guacone` command, which is an
 all-in-one utility that can take a collection of files and ingest them into the
 GUAC graph.
 
+In your original window, run:
+
 ```bash
-go run ./cmd/guacone files ../guac-data/docs/
+bin/guacone collect files ../guac-data/docs/
 ```
 
 This can take a minute or two. This dataset consists of a set of document types:
@@ -60,18 +69,19 @@ This can take a minute or two. This dataset consists of a set of document types:
 - SLSA attestations for kubernetes
 - Scorecard data for kubernetes repos
 - SPDX SBOMs for kubernetes containers
-- CycloneDX SBOMs for some latest DockerHub images
+- CycloneDX SBOMs for some popular DockerHub images
 
 ## Running Queries
 
 The queries for this demo are stored in the `demo/queries.gql` file. Running the
-demo queries can be done graphically by opening the Playground in a web browser,
-or using the command line.
+demo queries can be done graphically by opening the GraphQL Playground in a web
+browser, or using the command line.
 
 The remainder of the demo will have cli commands. If you would like to use the
-Playground instead, use these steps:
+GraphQL Playground instead, use these steps:
 
-1. Open the Playground by visiting `http://localhost:8080/` in your web browser.
+1. Open the GraphQL Playground by visiting `http://localhost:8080/` in your web
+   browser.
 
 1. Open `demo/queries.gql` in a text editor and copy the full contents.
 
@@ -87,9 +97,17 @@ run:
 pip install gql[all]
 ```
 
+Note:
+
+- if you are using a shell like `zsh` it will not be able to run the command
+  above properly. Instead, use a `bash` or `sh` shell.
+- in your system, if you are using pyhton3, you may need to use the `pip3`
+  command instead.
+
 ## GraphQL
 
-The GUAC graph is queryable using GraphQL. (Expand on GraphQL here)
+The GUAC graph is queryable using GraphQL. GraphQL is a query language for APIs
+and a runtime for fulfilling those queries with your existing data.
 
 > For some background reading, visit https://graphql.org/learn/ . Also, the full
 > GUAC schema can be saved with this command:
@@ -120,14 +138,14 @@ nodes. Therefore, we will only receive the top-level Type nodes.
 cat demo/queries.gql | gql-cli http://localhost:8080/query -o PkgQ1 | jq
 ```
 
+If you are using the GraphQL playground for the rest of the demo, you would run
+the query with the name at the end of the command. In this case, it is "PkgQ1".
+
 We receive:
 
 ```json
 {
   "packages": [
-    {
-      "type": "oci"
-    },
     {
       "type": "alpine"
     },
@@ -160,7 +178,7 @@ Type. The query looks like this:
 
 ```
 {
-  packages(pkgSpec: { type: "oci" }) {
+  packages(pkgSpec: { type: "deb" }) {
     type
     namespaces {
       namespace
@@ -179,22 +197,21 @@ Output:
 
 ```json
 {
-  "packages": [
-    {
-      "type": "oci",
-      "namespaces": [
-        {
-          "namespace": "docker.io/library"
-        },
-        {
-          "namespace": "docker.io/librar"
-        },
-        {
-          "namespace": "docker.io/lib"
-        }
-      ]
-    }
-  ]
+  "data": {
+    "packages": [
+      {
+        "type": "deb",
+        "namespaces": [
+          {
+            "namespace": "ubuntu"
+          },
+          {
+            "namespace": "debian"
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
@@ -579,17 +596,22 @@ container image to the `api` package. Finally is the `Package` node for the
 
 What we have learned is that the `vault` container image depends on both the
 `client` and `api` package. This is maybe not the dependency relationship we
-were hoping to find, for client-side searching, see the section below...
+were hoping to find.
+
+It is important to understand the limitations of the path GraphQL query in
+isolation and understand how to use client-side processing to get the desired
+results. An example of how to do this is in the section below.
 
 ## Vulnerabilities
 
 The data we have ingested in GUAC is based on the SBOM files in the `guac-data`
 repo, but does not contain any vulnerability information. GUAC has built-in
 "certifiers" which can search the ingested data and attach vulnerability data to
-them. To run the certifiers, run:
+them. The OSV certifier will search for OSV vulnerability information. To run
+the OSV certifiers, run:
 
 ```bash
-go run ./cmd/guacone certifier
+bin/guacone certifier osv --poll=false
 ```
 
 The certifier will take a few minutes to run. A vulnerability "noun" node may be
@@ -694,13 +716,15 @@ All of the above examples use a single GraphQL query. However, the query results
 are all easily parsed `json` that can be interpreted to build powerful scripts.
 GUAC has a `neighbors` query that will return all the nodes with a relationship
 to the specified node. This can be used to search through relationships, finding
-the specific type of path you are looking for.
+the specific type of path you are looking for. The neighbor query also take in a
+set of edge filters of which to traverse. However, we are not using that field
+in this query.
 
 The neighbors query looks like this:
 
 ```
 {
-  neighbors(node: $nodeId) {
+  neighbors(node: $nodeId, usingOnly: []) {
     __typename
     ... on Package{
       ...allPkgTree
@@ -723,8 +747,6 @@ to find "downward" dependency relationships.
 # implementation we try to find dependency links between packages
 def filter(fromID, fromNode, neighbor):
     if neighbor['__typename'] == 'Package':
-        if fromNode is None:
-            return True
         # From Package -> Package, only search downwards
         if fromNode['__typename'] == 'Package':
             return containsID(neighbor, fromID)

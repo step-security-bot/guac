@@ -69,7 +69,71 @@ func Test_depsCollector_RetrieveArtifacts(t *testing.T) {
 		poll:     false,
 		wantErr:  false,
 	}, {
-		name:     "yargs-parser package",
+		name:     "org.webjars.npm:a maven package",
+		packages: []string{"pkg:maven/org.webjars.npm/a@2.1.2"},
+		want: []*processor.Document{
+			{
+				Blob:   []byte(testdata.CollectedMavenWebJars),
+				Type:   processor.DocumentDepsDev,
+				Format: processor.FormatJSON,
+				SourceInformation: processor.SourceInformation{
+					Collector: DepsCollector,
+					Source:    DepsCollector,
+				},
+			},
+		},
+		poll:    false,
+		wantErr: false,
+	}, {
+		name:     "wheel-axle-runtime pypi package",
+		packages: []string{"pkg:pypi/wheel-axle-runtime@0.0.4.dev20230415195356"},
+		want: []*processor.Document{
+			{
+				Blob:   []byte(testdata.CollectedPypiWheelAxle),
+				Type:   processor.DocumentDepsDev,
+				Format: processor.FormatJSON,
+				SourceInformation: processor.SourceInformation{
+					Collector: DepsCollector,
+					Source:    DepsCollector,
+				},
+			},
+		},
+		poll:    false,
+		wantErr: false,
+	}, {
+		name:     "NPM React package version 17.0.0",
+		packages: []string{"pkg:npm/react@17.0.0"},
+		want: []*processor.Document{
+			{
+				Blob:   []byte(testdata.CollectedNPMReact),
+				Type:   processor.DocumentDepsDev,
+				Format: processor.FormatJSON,
+				SourceInformation: processor.SourceInformation{
+					Collector: DepsCollector,
+					Source:    DepsCollector,
+				},
+			},
+		},
+		poll:    false,
+		wantErr: false,
+	}, {
+		name:     "github.com/makenowjust/heredoc go package",
+		packages: []string{"pkg:golang/github.com/makenowjust/heredoc@v1.0.0"},
+		want: []*processor.Document{
+			{
+				Blob:   []byte(testdata.CollectedGoLangMakeNowJust),
+				Type:   processor.DocumentDepsDev,
+				Format: processor.FormatJSON,
+				SourceInformation: processor.SourceInformation{
+					Collector: DepsCollector,
+					Source:    DepsCollector,
+				},
+			},
+		},
+		poll:    false,
+		wantErr: false,
+	}, {
+		name:     "yargs-parser package npm package",
 		packages: []string{"pkg:npm/yargs-parser@4.2.1"},
 		want: []*processor.Document{
 			{
@@ -85,7 +149,7 @@ func Test_depsCollector_RetrieveArtifacts(t *testing.T) {
 		poll:    false,
 		wantErr: false,
 	}, {
-		name:     "duplicate package",
+		name:     "duplicate npm package",
 		packages: []string{"pkg:npm/yargs-parser@4.2.1", "pkg:npm/yargs-parser@4.2.1"},
 		want: []*processor.Document{
 			{
@@ -101,7 +165,7 @@ func Test_depsCollector_RetrieveArtifacts(t *testing.T) {
 		poll:    false,
 		wantErr: false,
 	}, {
-		name:     "foreign-types package",
+		name:     "foreign-types package cargo package",
 		packages: []string{"pkg:cargo/foreign-types@0.3.2"},
 		want: []*processor.Document{
 			{
@@ -163,9 +227,13 @@ func Test_depsCollector_RetrieveArtifacts(t *testing.T) {
 			}
 
 			for i := range collectedDocs {
-				collectedDocs[i].Blob, err = normalizeTimeStamp(collectedDocs[i].Blob)
+				collectedDocs[i].Blob, err = normalizeTimeStampAndScorecard(collectedDocs[i].Blob)
 				if err != nil {
-					t.Fatalf("unexpected error while normalizing timestamp: %v", err)
+					t.Fatalf("unexpected error while normalizing: %v", err)
+				}
+				tt.want[i].Blob, err = normalizeTimeStampAndScorecard(tt.want[i].Blob)
+				if err != nil {
+					t.Fatalf("unexpected error while normalizing: %v", err)
 				}
 				result := dochelper.DocTreeEqual(dochelper.DocNode(collectedDocs[i]), dochelper.DocNode(tt.want[i]))
 				if !result {
@@ -180,7 +248,9 @@ func Test_depsCollector_RetrieveArtifacts(t *testing.T) {
 	}
 }
 
-func normalizeTimeStamp(blob []byte) ([]byte, error) {
+// Scorecard and timestamp data constantly changes, causing CI to keep erroring every few days.
+// This normalizes the time and removes the scorecard compare
+func normalizeTimeStampAndScorecard(blob []byte) ([]byte, error) {
 	tm, err := time.Parse(time.RFC3339, "2022-11-21T17:45:50.52Z")
 	if err != nil {
 		return nil, err
@@ -191,12 +261,12 @@ func normalizeTimeStamp(blob []byte) ([]byte, error) {
 	}
 	packageComponent.UpdateTime = tm.UTC()
 	if packageComponent.Scorecard != nil {
-		packageComponent.Scorecard.TimeScanned = tm.UTC()
+		packageComponent.Scorecard = nil
 	}
-	for _, depPack := range packageComponent.DepPackages {
-		depPack.UpdateTime = tm.UTC()
-		if depPack.Scorecard != nil {
-			depPack.Scorecard.TimeScanned = tm.UTC()
+	for _, depPackage := range packageComponent.DepPackages {
+		depPackage.UpdateTime = tm.UTC()
+		if depPackage.Scorecard != nil {
+			depPackage.Scorecard = nil
 		}
 	}
 	return json.Marshal(packageComponent)

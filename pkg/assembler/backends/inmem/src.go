@@ -17,6 +17,8 @@ package inmem
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -82,7 +84,6 @@ type srcNameNode struct {
 	srcMapLinks    []uint32
 	scorecardLinks []uint32
 	occurrences    []uint32
-	hasSBOMs       []uint32
 	badLinks       []uint32
 	goodLinks      []uint32
 }
@@ -118,9 +119,6 @@ func (n *srcNameNode) Neighbors(allowedEdges edgeMap) []uint32 {
 	if allowedEdges[model.EdgeSourceIsOccurrence] {
 		out = append(out, n.occurrences...)
 	}
-	if allowedEdges[model.EdgeSourceHasSbom] {
-		out = append(out, n.hasSBOMs...)
-	}
 	if allowedEdges[model.EdgeSourceCertifyBad] {
 		out = append(out, n.badLinks...)
 	}
@@ -143,7 +141,6 @@ func (n *srcNameNode) BuildModelNode(c *demoClient) (model.Node, error) {
 func (p *srcNameNode) setSrcMapLinks(id uint32)      { p.srcMapLinks = append(p.srcMapLinks, id) }
 func (p *srcNameNode) setScorecardLinks(id uint32)   { p.scorecardLinks = append(p.scorecardLinks, id) }
 func (p *srcNameNode) setOccurrenceLinks(id uint32)  { p.occurrences = append(p.occurrences, id) }
-func (p *srcNameNode) setHasSBOM(id uint32)          { p.hasSBOMs = append(p.hasSBOMs, id) }
 func (p *srcNameNode) setCertifyBadLinks(id uint32)  { p.badLinks = append(p.badLinks, id) }
 func (p *srcNameNode) setCertifyGoodLinks(id uint32) { p.goodLinks = append(p.goodLinks, id) }
 
@@ -250,6 +247,10 @@ func (c *demoClient) Sources(ctx context.Context, filter *model.SourceSpec) ([]*
 		}
 		s, err := c.buildSourceResponse(uint32(id), filter)
 		if err != nil {
+			if errors.Is(err, errNotFound) {
+				// not found
+				return nil, nil
+			}
 			return nil, err
 		}
 		return []*model.Source{s}, nil
@@ -349,7 +350,7 @@ func (c *demoClient) buildSourceResponse(id uint32, filter *model.SourceSpec) (*
 
 	node, ok := c.index[id]
 	if !ok {
-		return nil, gqlerror.Errorf("ID does not match existing node")
+		return nil, fmt.Errorf("%w : ID does not match existing node", errNotFound)
 	}
 
 	snl := []*model.SourceName{}
@@ -373,7 +374,7 @@ func (c *demoClient) buildSourceResponse(id uint32, filter *model.SourceSpec) (*
 		})
 		node, ok = c.index[nameNode.parent]
 		if !ok {
-			return nil, gqlerror.Errorf("ID does not match existing node")
+			return nil, fmt.Errorf("Internal ID does not match existing node")
 		}
 	}
 
@@ -389,13 +390,13 @@ func (c *demoClient) buildSourceResponse(id uint32, filter *model.SourceSpec) (*
 		})
 		node, ok = c.index[nameStruct.parent]
 		if !ok {
-			return nil, gqlerror.Errorf("ID does not match existing node")
+			return nil, fmt.Errorf("Internal ID does not match existing node")
 		}
 	}
 
 	namespaceStruct, ok := node.(*srcNamespaceStruct)
 	if !ok {
-		return nil, gqlerror.Errorf("ID does not match expected node type for source namespace")
+		return nil, fmt.Errorf("%w: ID does not match expected node type for package namespace", errNotFound)
 	}
 	s := model.Source{
 		ID:         nodeID(namespaceStruct.id),

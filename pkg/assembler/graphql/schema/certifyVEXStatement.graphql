@@ -15,7 +15,7 @@
 
 # NOTE: This is experimental and might change in the future!
 
-# Defines a GraphQL schema for certifying VEX statements.
+# Defines a GraphQL schema for certifying VEX statements
 
 "PackageOrArtifact is a union of Package and Artifact."
 union PackageOrArtifact = Package | Artifact
@@ -42,9 +42,27 @@ input PackageOrArtifactInput {
   artifact: ArtifactInputSpec
 }
 
+"Records the status of a VEX statement subject."
+enum VexStatus {
+  NOT_AFFECTED
+  AFFECTED
+  FIXED
+  UNDER_INVESTIGATION
+}
+
+"Records the justification included in the VEX statement."
+enum VexJustification {
+  COMPONENT_NOT_PRESENT
+  VULNERABLE_CODE_NOT_PRESENT
+  VULNERABLE_CODE_NOT_IN_EXECUTE_PATH
+  VULNERABLE_CODE_CANNOT_BE_CONTROLLED_BY_ADVERSARY
+  INLINE_MITIGATIONS_ALREADY_EXIST
+  NOT_PROVIDED
+}
+
 """
-CertifyVEXStatement is an attestation that represents when a package or
-artifact has a VEX about a specific vulnerability (CVE, GHSA or OSV).
+CertifyVEXStatement is an attestation to attach VEX statements to a package or
+artifact to clarify the impact of a specific vulnerability (CVE, GHSA or OSV).
 """
 type CertifyVEXStatement {
   id: ID!
@@ -52,8 +70,14 @@ type CertifyVEXStatement {
   subject: PackageOrArtifact!
   "Attested vulnerability"
   vulnerability: Vulnerability!
-  "Justification for VEX"
-  justification: String!
+  "Status of the vulnerabilities with respect to the subject"
+  status: VexStatus!
+  "Justification from VEX statement"
+  vexJustification: VexJustification!
+  "VEX statement: impact_statement or action_statement depending on status"
+  statement: String!
+  "statusNotes may convey information about how status was determined"
+  statusNotes: String!
   "Timestamp (exact time in RFC 3339 format) for the VEX statement"
   knownSince: Time!
   "Document from which this attestation is generated from"
@@ -63,46 +87,44 @@ type CertifyVEXStatement {
 }
 
 """
-CertifyVEXStatementSpec allows filtering the list of CertifyVEXStatement to
-return.
+CertifyVEXStatementSpec allows filtering the list of VEX statements to
+return in a query.
 
 Only one subject type (package or artifact) and one vulnerability type (CVE,
 GHSA or OSV) may be specified.
 
-Note that setting `noVuln` in VulnerabilitySpec is invalid for VEX statements!
+Note that setting noVuln in VulnerabilitySpec is invalid for VEX statements!
 """
 input CertifyVEXStatementSpec {
   id: ID
   subject: PackageOrArtifactSpec
   vulnerability: VulnerabilitySpec
-  justification: String
+  status: VexStatus
+  vexJustification: VexJustification
+  statement: String
+  statusNotes: String
   knownSince: Time
   origin: String
   collector: String
 }
 
-"""
-VexStatementInputSpec is the same as CertifyVEXStatement but for mutation input.
-
-All fields are required.
-"""
+"VexStatementInputSpec represents the input to ingest VEX statements."
 input VexStatementInputSpec {
-  justification: String!
+  status: VexStatus!
+  vexJustification: VexJustification!
+  statement: String!
+  statusNotes: String!
   knownSince: Time!
   origin: String!
   collector: String!
 }
 
 extend type Query {
-  "Returns all CertifyVEXStatement."
+  "Returns all VEX certifications matching the input filter."
   CertifyVEXStatement(certifyVEXStatementSpec: CertifyVEXStatementSpec): [CertifyVEXStatement!]!
 }
 
 extend type Mutation {
-  """
-  Certify that a package or an artifact has an associated VEX for a vulnerability.
-
-  Note that setting `noVuln` in VulnerabilityInput is invalid for VEX statements!
-  """
+  "Adds a VEX certification for a package."
   ingestVEXStatement(subject: PackageOrArtifactInput!, vulnerability: VulnerabilityInput!, vexStatement: VexStatementInputSpec!): CertifyVEXStatement!
 }

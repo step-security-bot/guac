@@ -76,15 +76,7 @@ func (c *cyclonedxParser) getTopLevelPackage(cdxBom *cdx.BOM) error {
 		purl := cdxBom.Metadata.Component.PackageURL
 		if cdxBom.Metadata.Component.PackageURL == "" {
 			if cdxBom.Metadata.Component.Type == cdx.ComponentTypeContainer {
-				//TODO(dejanb): Change prefix to pkg:guac/cdx and align it with spdx implementation
 				splitImage := strings.Split(cdxBom.Metadata.Component.Name, "/")
-
-				const (
-					ociPrefix        = "pkg:oci/"
-					repositoryURLKey = "?repository_url="
-					tagKey           = "&tag="
-				)
-
 				splitTag := strings.Split(splitImage[len(splitImage)-1], ":")
 				var repositoryURL string
 				var tag string
@@ -102,13 +94,13 @@ func (c *cyclonedxParser) getTopLevelPackage(cdxBom *cdx.BOM) error {
 					tag = splitTag[1]
 				}
 
-				purl = fmt.Sprintf("%s%s@%s%s%s%s%s", ociPrefix, splitTag[0],
-					cdxBom.Metadata.Component.Version, repositoryURLKey, repositoryURL, tagKey, tag)
+				purl = "pkg:guac/cdx/" + repositoryURL + "@" + cdxBom.Metadata.Component.Version + "?tag=" + tag
 			} else if cdxBom.Metadata.Component.Type == cdx.ComponentTypeFile {
 				// example: file type ("/home/work/test/build/webserver/")
 				purl = "pkg:guac/file/" + cdxBom.Metadata.Component.Name + "&checksum=" + cdxBom.Metadata.Component.Version
 			}
 		}
+
 		topPackage, err := asmhelpers.PurlToPkg(purl)
 		if err != nil {
 			return err
@@ -189,8 +181,11 @@ func (c *cyclonedxParser) GetPredicates(ctx context.Context) *assembler.IngestPr
 
 	toplevel := c.getPackageElement(string(c.cdxBom.Metadata.Component.BOMRef))
 	// adding top level package edge manually for all depends on package
+	// TODO: This is not based on the relationship so that can be inaccurate (can capture both direct and in-direct)...Remove this and be done below by the *c.cdxBom.Dependencies?
+	// see https://github.com/CycloneDX/specification/issues/33
 	if toplevel != nil {
 		preds.IsDependency = append(preds.IsDependency, common.CreateTopLevelIsDeps(toplevel[0], c.packagePackages, nil, "top-level package GUAC heuristic connecting to each file/package")...)
+		preds.HasSBOM = append(preds.HasSBOM, common.CreateTopLevelHasSBOM(toplevel[0], c.doc))
 	}
 
 	for id := range c.packagePackages {

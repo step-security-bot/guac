@@ -27,7 +27,7 @@ query Path($subject: ID!, $target: ID!, $maxPathLength: Int!, $usingOnly: [Edge!
       ... AllSourceTree
     }
     ... on Artifact {
-      ...allArtifactTree
+      ...AllArtifactTree
     }
     ... on Builder {
       ...allBuilderTree
@@ -60,7 +60,7 @@ query Path($subject: ID!, $target: ID!, $maxPathLength: Int!, $usingOnly: [Edge!
       ...allSLSATree
     }
     ... on CertifyBad {
-      ...allCertifyBad
+      ...AllCertifyBad
     }
     ... on CertifyGood {
       ...allCertifyGood
@@ -99,7 +99,7 @@ query Neighbors($node: ID!, $usingOnly: [Edge!]!) {
       ... AllSourceTree
     }
     ... on Artifact {
-      ...allArtifactTree
+      ...AllArtifactTree
     }
     ... on Builder {
       ...allBuilderTree
@@ -132,7 +132,7 @@ query Neighbors($node: ID!, $usingOnly: [Edge!]!) {
       ...allSLSATree
     }
     ... on CertifyBad {
-      ...allCertifyBad
+      ...AllCertifyBad
     }
     ... on CertifyGood {
       ...allCertifyGood
@@ -171,7 +171,7 @@ query Node($node: ID!) {
       ... AllSourceTree
     }
     ... on Artifact {
-      ...allArtifactTree
+      ...AllArtifactTree
     }
     ... on Builder {
       ...allBuilderTree
@@ -204,7 +204,79 @@ query Node($node: ID!) {
       ...allSLSATree
     }
     ... on CertifyBad {
-      ...allCertifyBad
+      ...AllCertifyBad
+    }
+    ... on CertifyGood {
+      ...allCertifyGood
+    }
+    ... on HashEqual {
+      ...allHashEqualTree
+    }
+    ... on HasSBOM {
+      ...allHasSBOMTree
+    }
+    ... on HasSourceAt {
+      ...allHasSourceAt
+    }
+    ... on CertifyVuln {
+      ...AllCertifyVuln
+    }
+    ... on IsVulnerability {
+      ...allIsVulnerability
+    }
+    ... on CertifyVEXStatement {
+      ...allCertifyVEXStatement
+    }
+    ... on Builder {
+      ...allBuilderTree
+    }
+  }
+}
+
+query Nodes($nodes: [ID!]!) {
+  nodes(nodes: $nodes) {
+    __typename
+    ... on Package {
+      ... AllPkgTree
+    }
+    ... on Source {
+      ... AllSourceTree
+    }
+    ... on Artifact {
+      ...AllArtifactTree
+    }
+    ... on Builder {
+      ...allBuilderTree
+    }
+    ... on OSV {
+      ...AllOSVTree
+    }
+    ... on CVE {
+      ...AllCveTree
+    }
+    ... on GHSA {
+      ...AllGHSATree
+    }
+    ... on NoVuln {
+      id
+    }
+    ... on CertifyScorecard {
+      ...AllCertifyScorecard
+    }
+    ... on PkgEqual {
+      ...allPkgEqual
+    }
+    ... on IsOccurrence {
+      ...AllIsOccurrencesTree
+    }
+    ... on IsDependency {
+      ...allIsDependencyTree
+    }
+    ... on HasSLSA {
+      ...allSLSATree
+    }
+    ... on CertifyBad {
+      ...AllCertifyBad
     }
     ... on CertifyGood {
       ...allCertifyGood

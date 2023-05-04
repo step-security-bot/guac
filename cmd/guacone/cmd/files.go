@@ -27,7 +27,9 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/guacsec/guac/pkg/assembler"
 	"github.com/guacsec/guac/pkg/assembler/clients/helpers"
-	"github.com/guacsec/guac/pkg/collectsub/datasource"
+	"github.com/guacsec/guac/pkg/cli"
+	csub_client "github.com/guacsec/guac/pkg/collectsub/client"
+	"github.com/guacsec/guac/pkg/collectsub/collectsub/input"
 	"github.com/guacsec/guac/pkg/handler/collector"
 	"github.com/guacsec/guac/pkg/handler/collector/file"
 	"github.com/guacsec/guac/pkg/handler/processor"
@@ -35,6 +37,7 @@ import (
 	"github.com/guacsec/guac/pkg/ingestor/key"
 	"github.com/guacsec/guac/pkg/ingestor/key/inmemory"
 	"github.com/guacsec/guac/pkg/ingestor/parser"
+	parser_common "github.com/guacsec/guac/pkg/ingestor/parser/common"
 	"github.com/guacsec/guac/pkg/ingestor/verifier"
 	"github.com/guacsec/guac/pkg/ingestor/verifier/sigstore_verifier"
 	"github.com/guacsec/guac/pkg/logging"
@@ -42,51 +45,31 @@ import (
 	"github.com/spf13/viper"
 )
 
-type options struct {
-	dbAddr string
-	user   string
-	pass   string
-	realm  string
+type fileOptions struct {
 	// path to the pem file
 	keyPath string
 	// ID related to the key being stored
 	keyID string
 	// path to folder with documents to collect
 	path string
-	// datasource for collectors
-	dataSource datasource.CollectSource
-
 	// gql endpoint
 	graphqlEndpoint string
-
-	// certifyBad/certifyGood
-	good          bool
-	certifyType   string
-	justification string
-	subject       string
-	// if type is package, true if attestation is at pkgName (for all versions) or false for a specific version
-	pkgName bool
-
-	// osv/scorecard certifier
-	poll     bool
-	interval int
+	// csub address for identifier strings
+	csubAddr string
 }
 
-var exampleCmd = &cobra.Command{
+var filesCmd = &cobra.Command{
 	Use:   "files [flags] file_path",
 	Short: "take a folder of files and create a GUAC graph, this command talks directly to the graphQL endpoint",
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := logging.WithLogger(context.Background())
 		logger := logging.FromContext(ctx)
 
-		opts, err := validateFlags(
-			viper.GetString("gdbuser"),
-			viper.GetString("gdbpass"),
-			viper.GetString("gdbaddr"),
-			viper.GetString("realm"),
+		opts, err := validateFilesFlags(
 			viper.GetString("verifier-keyPath"),
 			viper.GetString("verifier-keyID"),
 			viper.GetString("gql-endpoint"),
+			viper.GetString("csub-addr"),
 			args)
 		if err != nil {
 			fmt.Printf("unable to validate flags: %v\n", err)
@@ -128,22 +111,20 @@ var exampleCmd = &cobra.Command{
 			logger.Errorf("unable to register file collector: %v", err)
 		}
 
+		// initialize collectsub client
+		csubClient, err := csub_client.NewClient(opts.csubAddr)
+		if err != nil {
+			logger.Infof("collectsub client initialization failed, this ingestion will not pull in any additional data through the collectsub service: %w", err)
+			csubClient = nil
+		} else {
+			defer csubClient.Close()
+		}
+
 		// Get pipeline of components
-		processorFunc, err := getProcessor(ctx)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-		ingestorFunc, err := getIngestor(ctx)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-		assemblerFunc, err := getAssembler(ctx, opts)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
+		processorFunc := getProcessor(ctx)
+		ingestorFunc := getIngestor(ctx)
+		collectSubEmitFunc := getCollectSubEmit(ctx, csubClient)
+		assemblerFunc := getAssembler(ctx, opts.graphqlEndpoint)
 
 		totalNum := 0
 		totalSuccess := 0
@@ -162,14 +143,19 @@ var exampleCmd = &cobra.Command{
 				return fmt.Errorf("unable to process doc: %v, fomat: %v, document: %v", err, d.Format, d.Type)
 			}
 
-			graphs, err := ingestorFunc(docTree)
+			predicates, idstrings, err := ingestorFunc(docTree)
 			if err != nil {
 				gotErr = true
 				filesWithErrors = append(filesWithErrors, d.SourceInformation.Source)
 				return fmt.Errorf("unable to ingest doc tree: %v", err)
 			}
 
-			err = assemblerFunc(graphs)
+			err = collectSubEmitFunc(idstrings)
+			if err != nil {
+				logger.Infof("unable to create entries in collectsub server, but continuing: %v", err)
+			}
+
+			err = assemblerFunc(predicates)
 			if err != nil {
 				gotErr = true
 				filesWithErrors = append(filesWithErrors, d.SourceInformation.Source)
@@ -203,12 +189,8 @@ var exampleCmd = &cobra.Command{
 	},
 }
 
-func validateFlags(user string, pass string, dbAddr string, realm string, keyPath string, keyID string, graphqlEndpoint string, args []string) (options, error) {
-	var opts options
-	opts.user = user
-	opts.pass = pass
-	opts.dbAddr = dbAddr
-	opts.realm = realm
+func validateFilesFlags(keyPath string, keyID string, graphqlEndpoint string, csubAddr string, args []string) (fileOptions, error) {
+	var opts fileOptions
 	opts.graphqlEndpoint = graphqlEndpoint
 
 	if keyPath != "" {
@@ -226,33 +208,43 @@ func validateFlags(user string, pass string, dbAddr string, realm string, keyPat
 		return opts, fmt.Errorf("expected positional argument for file_path")
 	}
 
+	opts.csubAddr = csubAddr
 	opts.path = args[0]
 
 	return opts, nil
 }
 
-func getProcessor(ctx context.Context) (func(*processor.Document) (processor.DocumentTree, error), error) {
+func getProcessor(ctx context.Context) func(*processor.Document) (processor.DocumentTree, error) {
 	return func(d *processor.Document) (processor.DocumentTree, error) {
 		return process.Process(ctx, d)
-	}, nil
-}
-func getIngestor(ctx context.Context) (func(processor.DocumentTree) ([]assembler.IngestPredicates, error), error) {
-	return func(doc processor.DocumentTree) ([]assembler.IngestPredicates, error) {
-		// for guacone collectors, we do not integrate with the collectsub service
-		inputs, _, err := parser.ParseDocumentTree(ctx, doc)
-		if err != nil {
-			return nil, err
-		}
-
-		return inputs, nil
-	}, nil
+	}
 }
 
-func getAssembler(ctx context.Context, opts options) (func([]assembler.IngestPredicates) error, error) {
+func getIngestor(ctx context.Context) func(processor.DocumentTree) ([]assembler.IngestPredicates, []*parser_common.IdentifierStrings, error) {
+	return func(doc processor.DocumentTree) ([]assembler.IngestPredicates, []*parser_common.IdentifierStrings, error) {
+		return parser.ParseDocumentTree(ctx, doc)
+	}
+}
+
+func getAssembler(ctx context.Context, graphqlEndpoint string) func([]assembler.IngestPredicates) error {
 	httpClient := http.Client{}
-	gqlclient := graphql.NewClient(opts.graphqlEndpoint, &httpClient)
+	gqlclient := graphql.NewClient(graphqlEndpoint, &httpClient)
 	f := helpers.GetAssembler(ctx, gqlclient)
-	return f, nil
+	return f
+}
+
+func getCollectSubEmit(ctx context.Context, csubClient csub_client.Client) func([]*parser_common.IdentifierStrings) error {
+	return func(idstrings []*parser_common.IdentifierStrings) error {
+		if csubClient != nil {
+			entries := input.IdentifierStringsSliceToCollectEntries(idstrings)
+			if len(entries) > 0 {
+				if err := csubClient.AddCollectEntries(ctx, entries); err != nil {
+					return fmt.Errorf("unable to add collect entries: %v", err)
+				}
+			}
+		}
+		return nil
+	}
 }
 
 func printErrors(filesWithErrors []string) string {
@@ -264,5 +256,16 @@ func printErrors(filesWithErrors []string) string {
 }
 
 func init() {
-	rootCmd.AddCommand(exampleCmd)
+	set, err := cli.BuildFlags([]string{"verifier-keyPath", "verifier-keyID"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to setup flag: %v", err)
+		os.Exit(1)
+	}
+	filesCmd.Flags().AddFlagSet(set)
+	if err := viper.BindPFlags(filesCmd.Flags()); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to bind flags: %v", err)
+		os.Exit(1)
+	}
+
+	collectCmd.AddCommand(filesCmd)
 }

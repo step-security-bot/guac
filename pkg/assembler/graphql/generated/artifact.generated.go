@@ -28,17 +28,17 @@ type MutationResolver interface {
 	IngestVulnerability(ctx context.Context, pkg model.PkgInputSpec, vulnerability model.VulnerabilityInput, certifyVuln model.VulnerabilityMetaDataInput) (*model.CertifyVuln, error)
 	IngestCve(ctx context.Context, cve *model.CVEInputSpec) (*model.Cve, error)
 	IngestGhsa(ctx context.Context, ghsa *model.GHSAInputSpec) (*model.Ghsa, error)
-	IngestHasSbom(ctx context.Context, subject model.PackageOrSourceInput, hasSbom model.HasSBOMInputSpec) (*model.HasSbom, error)
+	IngestHasSbom(ctx context.Context, subject model.PackageOrArtifactInput, hasSbom model.HasSBOMInputSpec) (*model.HasSbom, error)
 	IngestSlsa(ctx context.Context, subject model.ArtifactInputSpec, builtFrom []*model.ArtifactInputSpec, builtBy model.BuilderInputSpec, slsa model.SLSAInputSpec) (*model.HasSlsa, error)
 	IngestMaterials(ctx context.Context, materials []*model.ArtifactInputSpec) ([]*model.Artifact, error)
 	IngestHasSourceAt(ctx context.Context, pkg model.PkgInputSpec, pkgMatchType model.MatchFlags, source model.SourceInputSpec, hasSourceAt model.HasSourceAtInputSpec) (*model.HasSourceAt, error)
-	IngestHashEqual(ctx context.Context, artifact model.ArtifactInputSpec, equalArtifact model.ArtifactInputSpec, hashEqual model.HashEqualInputSpec) (*model.HashEqual, error)
+	IngestHashEqual(ctx context.Context, artifact model.ArtifactInputSpec, otherArtifact model.ArtifactInputSpec, hashEqual model.HashEqualInputSpec) (*model.HashEqual, error)
 	IngestDependency(ctx context.Context, pkg model.PkgInputSpec, depPkg model.PkgInputSpec, dependency model.IsDependencyInputSpec) (*model.IsDependency, error)
 	IngestOccurrence(ctx context.Context, subject model.PackageOrSourceInput, artifact model.ArtifactInputSpec, occurrence model.IsOccurrenceInputSpec) (*model.IsOccurrence, error)
 	IngestIsVulnerability(ctx context.Context, osv model.OSVInputSpec, vulnerability model.CveOrGhsaInput, isVulnerability model.IsVulnerabilityInputSpec) (*model.IsVulnerability, error)
 	IngestOsv(ctx context.Context, osv *model.OSVInputSpec) (*model.Osv, error)
 	IngestPackage(ctx context.Context, pkg model.PkgInputSpec) (*model.Package, error)
-	IngestPkgEqual(ctx context.Context, pkg model.PkgInputSpec, depPkg model.PkgInputSpec, pkgEqual model.PkgEqualInputSpec) (*model.PkgEqual, error)
+	IngestPkgEqual(ctx context.Context, pkg model.PkgInputSpec, otherPackage model.PkgInputSpec, pkgEqual model.PkgEqualInputSpec) (*model.PkgEqual, error)
 	IngestSource(ctx context.Context, source model.SourceInputSpec) (*model.Source, error)
 }
 type QueryResolver interface {
@@ -63,6 +63,7 @@ type QueryResolver interface {
 	Path(ctx context.Context, subject string, target string, maxPathLength int, usingOnly []model.Edge) ([]model.Node, error)
 	Neighbors(ctx context.Context, node string, usingOnly []model.Edge) ([]model.Node, error)
 	Node(ctx context.Context, node string) (model.Node, error)
+	Nodes(ctx context.Context, nodes []string) ([]model.Node, error)
 	PkgEqual(ctx context.Context, pkgEqualSpec *model.PkgEqualSpec) ([]*model.PkgEqual, error)
 	Sources(ctx context.Context, sourceSpec *model.SourceSpec) ([]*model.Source, error)
 }
@@ -257,10 +258,10 @@ func (ec *executionContext) field_Mutation_ingestGHSA_args(ctx context.Context, 
 func (ec *executionContext) field_Mutation_ingestHasSBOM_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
-	var arg0 model.PackageOrSourceInput
+	var arg0 model.PackageOrArtifactInput
 	if tmp, ok := rawArgs["subject"]; ok {
 		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("subject"))
-		arg0, err = ec.unmarshalNPackageOrSourceInput2githubᚗcomᚋguacsecᚋguacᚋpkgᚋassemblerᚋgraphqlᚋmodelᚐPackageOrSourceInput(ctx, tmp)
+		arg0, err = ec.unmarshalNPackageOrArtifactInput2githubᚗcomᚋguacsecᚋguacᚋpkgᚋassemblerᚋgraphqlᚋmodelᚐPackageOrArtifactInput(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
@@ -333,14 +334,14 @@ func (ec *executionContext) field_Mutation_ingestHashEqual_args(ctx context.Cont
 	}
 	args["artifact"] = arg0
 	var arg1 model.ArtifactInputSpec
-	if tmp, ok := rawArgs["equalArtifact"]; ok {
-		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("equalArtifact"))
+	if tmp, ok := rawArgs["otherArtifact"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("otherArtifact"))
 		arg1, err = ec.unmarshalNArtifactInputSpec2githubᚗcomᚋguacsecᚋguacᚋpkgᚋassemblerᚋgraphqlᚋmodelᚐArtifactInputSpec(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["equalArtifact"] = arg1
+	args["otherArtifact"] = arg1
 	var arg2 model.HashEqualInputSpec
 	if tmp, ok := rawArgs["hashEqual"]; ok {
 		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("hashEqual"))
@@ -477,14 +478,14 @@ func (ec *executionContext) field_Mutation_ingestPkgEqual_args(ctx context.Conte
 	}
 	args["pkg"] = arg0
 	var arg1 model.PkgInputSpec
-	if tmp, ok := rawArgs["depPkg"]; ok {
-		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("depPkg"))
+	if tmp, ok := rawArgs["otherPackage"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("otherPackage"))
 		arg1, err = ec.unmarshalNPkgInputSpec2githubᚗcomᚋguacsecᚋguacᚋpkgᚋassemblerᚋgraphqlᚋmodelᚐPkgInputSpec(ctx, tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["depPkg"] = arg1
+	args["otherPackage"] = arg1
 	var arg2 model.PkgEqualInputSpec
 	if tmp, ok := rawArgs["pkgEqual"]; ok {
 		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("pkgEqual"))
@@ -911,6 +912,21 @@ func (ec *executionContext) field_Query_node_args(ctx context.Context, rawArgs m
 		}
 	}
 	args["node"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_nodes_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 []string
+	if tmp, ok := rawArgs["nodes"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("nodes"))
+		arg0, err = ec.unmarshalNID2ᚕstringᚄ(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["nodes"] = arg0
 	return args, nil
 }
 
@@ -1522,8 +1538,14 @@ func (ec *executionContext) fieldContext_Mutation_ingestVEXStatement(ctx context
 				return ec.fieldContext_CertifyVEXStatement_subject(ctx, field)
 			case "vulnerability":
 				return ec.fieldContext_CertifyVEXStatement_vulnerability(ctx, field)
-			case "justification":
-				return ec.fieldContext_CertifyVEXStatement_justification(ctx, field)
+			case "status":
+				return ec.fieldContext_CertifyVEXStatement_status(ctx, field)
+			case "vexJustification":
+				return ec.fieldContext_CertifyVEXStatement_vexJustification(ctx, field)
+			case "statement":
+				return ec.fieldContext_CertifyVEXStatement_statement(ctx, field)
+			case "statusNotes":
+				return ec.fieldContext_CertifyVEXStatement_statusNotes(ctx, field)
 			case "knownSince":
 				return ec.fieldContext_CertifyVEXStatement_knownSince(ctx, field)
 			case "origin":
@@ -1751,7 +1773,7 @@ func (ec *executionContext) _Mutation_ingestHasSBOM(ctx context.Context, field g
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().IngestHasSbom(rctx, fc.Args["subject"].(model.PackageOrSourceInput), fc.Args["hasSBOM"].(model.HasSBOMInputSpec))
+		return ec.resolvers.Mutation().IngestHasSbom(rctx, fc.Args["subject"].(model.PackageOrArtifactInput), fc.Args["hasSBOM"].(model.HasSBOMInputSpec))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1782,6 +1804,14 @@ func (ec *executionContext) fieldContext_Mutation_ingestHasSBOM(ctx context.Cont
 				return ec.fieldContext_HasSBOM_subject(ctx, field)
 			case "uri":
 				return ec.fieldContext_HasSBOM_uri(ctx, field)
+			case "algorithm":
+				return ec.fieldContext_HasSBOM_algorithm(ctx, field)
+			case "digest":
+				return ec.fieldContext_HasSBOM_digest(ctx, field)
+			case "downloadLocation":
+				return ec.fieldContext_HasSBOM_downloadLocation(ctx, field)
+			case "annotations":
+				return ec.fieldContext_HasSBOM_annotations(ctx, field)
 			case "origin":
 				return ec.fieldContext_HasSBOM_origin(ctx, field)
 			case "collector":
@@ -2015,7 +2045,7 @@ func (ec *executionContext) _Mutation_ingestHashEqual(ctx context.Context, field
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().IngestHashEqual(rctx, fc.Args["artifact"].(model.ArtifactInputSpec), fc.Args["equalArtifact"].(model.ArtifactInputSpec), fc.Args["hashEqual"].(model.HashEqualInputSpec))
+		return ec.resolvers.Mutation().IngestHashEqual(rctx, fc.Args["artifact"].(model.ArtifactInputSpec), fc.Args["otherArtifact"].(model.ArtifactInputSpec), fc.Args["hashEqual"].(model.HashEqualInputSpec))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2115,6 +2145,8 @@ func (ec *executionContext) fieldContext_Mutation_ingestDependency(ctx context.C
 				return ec.fieldContext_IsDependency_dependentPackage(ctx, field)
 			case "versionRange":
 				return ec.fieldContext_IsDependency_versionRange(ctx, field)
+			case "dependencyType":
+				return ec.fieldContext_IsDependency_dependencyType(ctx, field)
 			case "justification":
 				return ec.fieldContext_IsDependency_justification(ctx, field)
 			case "origin":
@@ -2415,7 +2447,7 @@ func (ec *executionContext) _Mutation_ingestPkgEqual(ctx context.Context, field 
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Mutation().IngestPkgEqual(rctx, fc.Args["pkg"].(model.PkgInputSpec), fc.Args["depPkg"].(model.PkgInputSpec), fc.Args["pkgEqual"].(model.PkgEqualInputSpec))
+		return ec.resolvers.Mutation().IngestPkgEqual(rctx, fc.Args["pkg"].(model.PkgInputSpec), fc.Args["otherPackage"].(model.PkgInputSpec), fc.Args["pkgEqual"].(model.PkgEqualInputSpec))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -2897,8 +2929,14 @@ func (ec *executionContext) fieldContext_Query_CertifyVEXStatement(ctx context.C
 				return ec.fieldContext_CertifyVEXStatement_subject(ctx, field)
 			case "vulnerability":
 				return ec.fieldContext_CertifyVEXStatement_vulnerability(ctx, field)
-			case "justification":
-				return ec.fieldContext_CertifyVEXStatement_justification(ctx, field)
+			case "status":
+				return ec.fieldContext_CertifyVEXStatement_status(ctx, field)
+			case "vexJustification":
+				return ec.fieldContext_CertifyVEXStatement_vexJustification(ctx, field)
+			case "statement":
+				return ec.fieldContext_CertifyVEXStatement_statement(ctx, field)
+			case "statusNotes":
+				return ec.fieldContext_CertifyVEXStatement_statusNotes(ctx, field)
 			case "knownSince":
 				return ec.fieldContext_CertifyVEXStatement_knownSince(ctx, field)
 			case "origin":
@@ -3157,6 +3195,14 @@ func (ec *executionContext) fieldContext_Query_HasSBOM(ctx context.Context, fiel
 				return ec.fieldContext_HasSBOM_subject(ctx, field)
 			case "uri":
 				return ec.fieldContext_HasSBOM_uri(ctx, field)
+			case "algorithm":
+				return ec.fieldContext_HasSBOM_algorithm(ctx, field)
+			case "digest":
+				return ec.fieldContext_HasSBOM_digest(ctx, field)
+			case "downloadLocation":
+				return ec.fieldContext_HasSBOM_downloadLocation(ctx, field)
+			case "annotations":
+				return ec.fieldContext_HasSBOM_annotations(ctx, field)
 			case "origin":
 				return ec.fieldContext_HasSBOM_origin(ctx, field)
 			case "collector":
@@ -3427,6 +3473,8 @@ func (ec *executionContext) fieldContext_Query_IsDependency(ctx context.Context,
 				return ec.fieldContext_IsDependency_dependentPackage(ctx, field)
 			case "versionRange":
 				return ec.fieldContext_IsDependency_versionRange(ctx, field)
+			case "dependencyType":
+				return ec.fieldContext_IsDependency_dependencyType(ctx, field)
 			case "justification":
 				return ec.fieldContext_IsDependency_justification(ctx, field)
 			case "origin":
@@ -3872,6 +3920,61 @@ func (ec *executionContext) fieldContext_Query_node(ctx context.Context, field g
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_node_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_nodes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_nodes(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().Nodes(rctx, fc.Args["nodes"].([]string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.([]model.Node)
+	fc.Result = res
+	return ec.marshalNNode2ᚕgithubᚗcomᚋguacsecᚋguacᚋpkgᚋassemblerᚋgraphqlᚋmodelᚐNodeᚄ(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_nodes(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Node does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_nodes_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return
 	}
@@ -4979,6 +5082,29 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_node(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx, innerFunc)
+			}
+
+			out.Concurrently(i, func() graphql.Marshaler {
+				return rrm(innerCtx)
+			})
+		case "nodes":
+			field := field
+
+			innerFunc := func(ctx context.Context) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_nodes(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&invalids, 1)
 				}

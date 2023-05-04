@@ -30,6 +30,7 @@ const (
 	uri string = "uri"
 )
 
+// TODO: noe4j backend does not match the schema. This needs updating before use!
 func (c *neo4jClient) HasSBOM(ctx context.Context, hasSBOMSpec *model.HasSBOMSpec) ([]*model.HasSbom, error) {
 
 	// TODO: Fix validation
@@ -107,7 +108,7 @@ func (c *neo4jClient) HasSBOM(ctx context.Context, hasSBOMSpec *model.HasSBOMSpe
 		aggregateHasSBOM = append(aggregateHasSBOM, result.([]*model.HasSbom)...)
 	}
 
-	if queryAll || (hasSBOMSpec.Subject != nil && hasSBOMSpec.Subject.Source != nil) {
+	if queryAll || (hasSBOMSpec.Subject != nil && hasSBOMSpec.Subject.Artifact != nil) {
 		var sb strings.Builder
 		var firstMatch bool = true
 		queryValues := map[string]any{}
@@ -116,8 +117,8 @@ func (c *neo4jClient) HasSBOM(ctx context.Context, hasSBOMSpec *model.HasSBOMSpe
 			"-[:SrcHasName]->(name:SrcName)-[:subject]-(hasSBOM:HasSBOM)"
 		sb.WriteString(query)
 
-		if hasSBOMSpec.Subject != nil && hasSBOMSpec.Subject.Source != nil {
-			setSrcMatchValues(&sb, hasSBOMSpec.Subject.Source, false, &firstMatch, queryValues)
+		if hasSBOMSpec.Subject != nil && hasSBOMSpec.Subject.Artifact != nil {
+			setArtifactMatchValues(&sb, hasSBOMSpec.Subject.Artifact, false, &firstMatch, queryValues)
 		}
 		setHasSBOMValues(&sb, hasSBOMSpec, &firstMatch, queryValues)
 		sb.WriteString(" RETURN type.type, namespace.namespace, name.name, name.tag, name.commit, hasSBOM")
@@ -133,13 +134,10 @@ func (c *neo4jClient) HasSBOM(ctx context.Context, hasSBOMSpec *model.HasSBOMSpe
 				collectedHasSBOM := []*model.HasSbom{}
 
 				for result.Next() {
-					tag := result.Record().Values[3]
-					commit := result.Record().Values[4]
-					nameStr := result.Record().Values[2].(string)
-					namespaceStr := result.Record().Values[1].(string)
-					srcType := result.Record().Values[0].(string)
+					algorithm := result.Record().Values[0].(string)
+					digest := result.Record().Values[1].(string)
 
-					src := generateModelSource(srcType, namespaceStr, nameStr, commit, tag)
+					src := generateModelArtifact(algorithm, digest)
 
 					hasSBOMNode := dbtype.Node{}
 					if result.Record().Values[5] != nil {
@@ -169,23 +167,23 @@ func (c *neo4jClient) HasSBOM(ctx context.Context, hasSBOMSpec *model.HasSBOMSpe
 
 func setHasSBOMValues(sb *strings.Builder, hasSBOMSpec *model.HasSBOMSpec, firstMatch *bool, queryValues map[string]any) {
 	if hasSBOMSpec.URI != nil {
-		matchProperties(sb, *firstMatch, "hasSBOM", "uri", "$uri")
+		matchProperties(sb, *firstMatch, "hasSBOM", uri, "$"+uri)
 		*firstMatch = false
-		queryValues["uri"] = hasSBOMSpec.URI
+		queryValues[uri] = hasSBOMSpec.URI
 	}
 	if hasSBOMSpec.Origin != nil {
-		matchProperties(sb, *firstMatch, "hasSBOM", "origin", "$origin")
+		matchProperties(sb, *firstMatch, "hasSBOM", origin, "$"+origin)
 		*firstMatch = false
-		queryValues["origin"] = hasSBOMSpec.Origin
+		queryValues[origin] = hasSBOMSpec.Origin
 	}
 	if hasSBOMSpec.Collector != nil {
-		matchProperties(sb, *firstMatch, "hasSBOM", "collector", "$collector")
+		matchProperties(sb, *firstMatch, "hasSBOM", collector, "$"+collector)
 		*firstMatch = false
-		queryValues["collector"] = hasSBOMSpec.Collector
+		queryValues[collector] = hasSBOMSpec.Collector
 	}
 }
 
-func generateModelHasSBOM(subject model.PackageOrSource, uri, origin, collector string) *model.HasSbom {
+func generateModelHasSBOM(subject model.PackageOrArtifact, uri, origin, collector string) *model.HasSbom {
 	hasSBOM := model.HasSbom{
 		Subject:   subject,
 		URI:       uri,
@@ -195,6 +193,6 @@ func generateModelHasSBOM(subject model.PackageOrSource, uri, origin, collector 
 	return &hasSBOM
 }
 
-func (c *neo4jClient) IngestHasSbom(ctx context.Context, subject model.PackageOrSourceInput, hasSbom model.HasSBOMInputSpec) (*model.HasSbom, error) {
+func (c *neo4jClient) IngestHasSbom(ctx context.Context, subject model.PackageOrArtifactInput, hasSbom model.HasSBOMInputSpec) (*model.HasSbom, error) {
 	panic(fmt.Errorf("not implemented: IngestHasSbom - IngestHasSbom"))
 }

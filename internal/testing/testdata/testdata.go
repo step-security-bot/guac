@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/guacsec/guac/internal/testing/keyutil"
+	"github.com/guacsec/guac/internal/testing/ptrfrom"
 	"github.com/guacsec/guac/pkg/assembler"
 	model "github.com/guacsec/guac/pkg/assembler/clients/generated"
 	asmhelpers "github.com/guacsec/guac/pkg/assembler/helpers"
@@ -119,8 +120,8 @@ var (
 
 	// DSSE/SLSA Testdata
 
-	// Taken from: https://slsa.dev/provenance/v0.1#example
-	ite6SLSA = `
+	// Taken from: https://slsa.dev/provenance/v0.2#example
+	ite6SLSA02 = `
 	{
 		"_type": "https://in-toto.io/Statement/v0.1",
 		"subject": [{"name": "helloworld", "digest": {"sha256": "3a2bd2c5cc4c978e8aefd8bd0ef335fb42ee31d1"}}],
@@ -153,7 +154,77 @@ var (
 		}
 	}`
 
-	b64ITE6SLSA    = base64.StdEncoding.EncodeToString([]byte(ite6SLSA))
+	ite6SLSA1 = `
+{
+    "_type": "https://in-toto.io/Statement/v1",
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "predicate": {
+        "buildDefinition": {
+            "buildType": "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1",
+            "externalParameters": {
+                "inputs": {
+                    "build_id": 123456768,
+                    "deploy_target": "deployment_sys_1a",
+                    "perform_deploy": "true"
+                },
+                "vars": {
+                    "MASCOT": "Mona"
+                },
+                "workflow": {
+                    "ref": "refs/heads/main",
+                    "repository": "https://github.com/octocat/hello-world",
+                    "path": ".github/workflow/release.yml"
+                }
+            },
+            "internalParameters": {
+                "github": {
+                    "actor_id": "1234567",
+                    "event_name": "workflow_dispatch"
+                }
+            },
+            "resolvedDependencies": [
+                {
+                    "uri": "git+https://github.com/octocat/hello-world@refs/heads/main",
+                    "digest": {
+                        "gitCommit": "c27d339ee6075c1f744c5d4b200f7901aad2c369"
+                    }
+                 },
+                {
+                    "uri": "https://github.com/actions/virtual-environments/releases/tag/ubuntu20/20220515.1"
+                }
+            ]
+        },
+        "runDetails": {
+            "builder": {
+                "id": "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@refs/tags/v0.0.1"
+            },
+            "metadata": {
+                "invocationId": "https://github.com/octocat/hello-world/actions/runs/1536140711/attempts/1",
+                "startedOn": "2023-01-01T12:34:56Z"
+            }
+        }
+    },
+    "subject": [
+        {
+            "name": "_",
+            "digest": {
+                "sha256": "fe4fe40ac7250263c5dbe1cf3138912f3f416140aa248637a60d65fe22c47da4"
+            }
+        }
+    ]
+}
+`
+	Ite6SLSA1Doc = processor.Document{
+		Blob:   []byte(ite6SLSA1),
+		Type:   processor.DocumentITE6SLSA,
+		Format: processor.FormatJSON,
+		SourceInformation: processor.SourceInformation{
+			Collector: "TestCollector",
+			Source:    "TestSource",
+		},
+	}
+
+	b64ITE6SLSA    = base64.StdEncoding.EncodeToString([]byte(ite6SLSA02))
 	Ite6Payload, _ = json.Marshal(dsse.Envelope{
 		PayloadType: "https://in-toto.io/Statement/v0.1",
 		Payload:     b64ITE6SLSA,
@@ -172,7 +243,7 @@ var (
 		},
 	}
 	Ite6SLSADoc = processor.Document{
-		Blob:   []byte(ite6SLSA),
+		Blob:   []byte(ite6SLSA02),
 		Type:   processor.DocumentITE6SLSA,
 		Format: processor.FormatJSON,
 		SourceInformation: processor.SourceInformation{
@@ -264,6 +335,76 @@ var (
 		},
 	}
 
+	slsa1time, _ = time.Parse(time.RFC3339, "2023-01-01T12:34:56Z")
+	SlsaPreds1   = assembler.IngestPredicates{
+		IsOccurrence: []assembler.IsOccurrenceIngest{
+			{
+				Src: &model.SourceInputSpec{
+					Type:      "git",
+					Namespace: "github.com/octocat/hello-world@refs/heads",
+					Name:      "main",
+				},
+				Artifact: &model.ArtifactInputSpec{
+					Algorithm: "gitCommit",
+					Digest:    "c27d339ee6075c1f744c5d4b200f7901aad2c369",
+				},
+				IsOccurrence: &slsaIsOccurrence,
+			},
+			{
+				Pkg: &model.PkgInputSpec{
+					Type:      "guac",
+					Namespace: ptrfrom.String("generic"),
+					Name:      "_",
+					Version:   ptrfrom.String(""),
+					Subpath:   ptrfrom.String(""),
+				},
+				Artifact: &model.ArtifactInputSpec{
+					Algorithm: "sha256",
+					Digest:    "fe4fe40ac7250263c5dbe1cf3138912f3f416140aa248637a60d65fe22c47da4",
+				},
+				IsOccurrence: &slsaIsOccurrence,
+			},
+		},
+		HasSlsa: []assembler.HasSlsaIngest{
+			{
+				Artifact: &model.ArtifactInputSpec{
+					Algorithm: "sha256",
+					Digest:    "fe4fe40ac7250263c5dbe1cf3138912f3f416140aa248637a60d65fe22c47da4",
+				},
+				Builder: &model.BuilderInputSpec{
+					Uri: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@refs/tags/v0.0.1",
+				},
+				Materials: []model.ArtifactInputSpec{{
+					Algorithm: "gitCommit",
+					Digest:    "c27d339ee6075c1f744c5d4b200f7901aad2c369",
+				}},
+				HasSlsa: &model.SLSAInputSpec{
+					BuildType:   "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1",
+					SlsaVersion: "https://slsa.dev/provenance/v1",
+					StartedOn:   slsa1time,
+					SlsaPredicate: []model.SLSAPredicateInputSpec{
+						{Key: "slsa.buildDefinition.buildType", Value: "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1"},
+						{Key: "slsa.buildDefinition.externalParameters.inputs.build_id", Value: "1.23456768e+08"},
+						{Key: "slsa.buildDefinition.externalParameters.inputs.deploy_target", Value: "deployment_sys_1a"},
+						{Key: "slsa.buildDefinition.externalParameters.inputs.perform_deploy", Value: "true"},
+						{Key: "slsa.buildDefinition.externalParameters.vars.MASCOT", Value: "Mona"},
+						{Key: "slsa.buildDefinition.externalParameters.workflow.path", Value: ".github/workflow/release.yml"},
+						{Key: "slsa.buildDefinition.externalParameters.workflow.ref", Value: "refs/heads/main"},
+						{Key: "slsa.buildDefinition.externalParameters.workflow.repository", Value: "https://github.com/octocat/hello-world"},
+						{Key: "slsa.buildDefinition.internalParameters.github.actor_id", Value: "1234567"},
+						{Key: "slsa.buildDefinition.internalParameters.github.event_name", Value: "workflow_dispatch"},
+						{Key: "slsa.buildDefinition.resolvedDependencies.0.digest.gitCommit", Value: "c27d339ee6075c1f744c5d4b200f7901aad2c369"},
+						{Key: "slsa.buildDefinition.resolvedDependencies.0.uri", Value: "git+https://github.com/octocat/hello-world@refs/heads/main"},
+						{Key: "slsa.buildDefinition.resolvedDependencies.1.uri", Value: "https://github.com/actions/virtual-environments/releases/tag/ubuntu20/20220515.1"},
+						{Key: "slsa.runDetails.builder.id", Value: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@refs/tags/v0.0.1"},
+						{Key: "slsa.runDetails.metadata.invocationID", Value: "https://github.com/octocat/hello-world/actions/runs/1536140711/attempts/1"},
+						{Key: "slsa.runDetails.metadata.startedOn", Value: "2023-01-01T12:34:56Z"},
+					},
+				},
+			},
+		},
+	}
+
 	// TODO: needs to be resolved by https://github.com/guacsec/guac/issues/75
 	Ident = []common.TrustInformation{}
 	// Ident = assembler.IdentityNode{
@@ -342,88 +483,99 @@ var (
 			Pkg:    topLevelPack,
 			DepPkg: baselayoutPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "3.2.0-r22",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "3.2.0-r22",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    topLevelPack,
 			DepPkg: baselayoutdataPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "3.2.0-r22",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "3.2.0-r22",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    topLevelPack,
 			DepPkg: keysPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "2.4-r1",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "2.4-r1",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    topLevelPack,
 			DepPkg: worldFilePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    topLevelPack,
 			DepPkg: rootFilePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    topLevelPack,
 			DepPkg: triggersFilePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    topLevelPack,
 			DepPkg: rsaPubFilePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    baselayoutPack,
 			DepPkg: keysPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "2.4-r1",
-				Justification: isDepJustifyDependencyOfJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "2.4-r1",
+				Justification:  isDepJustifyDependencyOfJustification,
 			},
 		},
 		{
 			Pkg:    rootFilePack,
 			DepPkg: rsaPubFilePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "",
-				Justification: isDepJustifyDependsOnJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "",
+				Justification:  isDepJustifyDependsOnJustification,
 			},
 		},
 		{
 			Pkg:    baselayoutPack,
 			DepPkg: rootFilePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "",
-				Justification: isDepJustifyContainsJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "",
+				Justification:  isDepJustifyContainsJustification,
 			},
 		},
 		{
 			Pkg:    keysPack,
 			DepPkg: rsaPubFilePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "",
-				Justification: isDepJustifyContainedByJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "",
+				Justification:  isDepJustifyContainedByJustification,
 			},
 		},
 	}
@@ -451,13 +603,26 @@ var (
 		},
 	}
 
+	SpdxHasSBOM = []assembler.HasSBOMIngest{
+		{
+			Pkg: topLevelPack,
+			HasSBOM: &model.HasSBOMInputSpec{
+				Uri:              "TestSource",
+				Algorithm:        "sha256",
+				Digest:           "8b5e8212cae084f92ff91f8625a50ea1070738cfc68ecca08bf04d64f64b9feb",
+				DownloadLocation: "TestSource",
+			},
+		},
+	}
+
 	SpdxIngestionPredicates = assembler.IngestPredicates{
 		IsDependency: SpdxDeps,
 		IsOccurrence: SpdxOccurences,
+		HasSBOM:      SpdxHasSBOM,
 	}
 
 	// CycloneDX Testdata
-	cdxTopLevelPack, _ = asmhelpers.PurlToPkg("pkg:oci/static@sha256:6ad5b696af3ca05a048bd29bf0f623040462638cb0b29c8d702cbb2805687388?repository_url=gcr.io/distroless/static&tag=nonroot")
+	cdxTopLevelPack, _ = asmhelpers.PurlToPkg("pkg:guac/cdx/gcr.io/distroless/static@sha256:6ad5b696af3ca05a048bd29bf0f623040462638cb0b29c8d702cbb2805687388?tag=nonroot")
 
 	cdxTzdataPack, _ = asmhelpers.PurlToPkg("pkg:deb/debian/tzdata@2021a-1+deb11u6?arch=all&distro=debian-11")
 
@@ -470,30 +635,46 @@ var (
 			Pkg:    cdxTopLevelPack,
 			DepPkg: cdxBasefilesPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "11.1+deb11u5",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "11.1+deb11u5",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    cdxTopLevelPack,
 			DepPkg: cdxNetbasePack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "6.3",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "6.3",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    cdxTopLevelPack,
 			DepPkg: cdxTzdataPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "2021a-1+deb11u6",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "2021a-1+deb11u6",
+				Justification:  isDepJustifyTopPkgJustification,
+			},
+		},
+	}
+
+	CdxHasSBOM = []assembler.HasSBOMIngest{
+		{
+			Pkg: cdxTopLevelPack,
+			HasSBOM: &model.HasSBOMInputSpec{
+				Uri:              "TestSource",
+				Algorithm:        "sha256",
+				Digest:           "01942b5eefd3c15b50318c66d8d16627be573197c877e8a286a8cb12de7939cb",
+				DownloadLocation: "TestSource",
 			},
 		},
 	}
 
 	CdxIngestionPredicates = assembler.IngestPredicates{
 		IsDependency: CdxDeps,
+		HasSBOM:      CdxHasSBOM,
 	}
 
 	cdxTopQuarkusPack, _ = asmhelpers.PurlToPkg("pkg:maven/org.acme/getting-started@1.0.0-SNAPSHOT?type=jar")
@@ -507,24 +688,27 @@ var (
 			Pkg:    cdxTopQuarkusPack,
 			DepPkg: cdxResteasyPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "2.13.4.Final",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "2.13.4.Final",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    cdxTopQuarkusPack,
 			DepPkg: cdxReactiveCommonPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "2.13.4.Final",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "2.13.4.Final",
+				Justification:  isDepJustifyTopPkgJustification,
 			},
 		},
 		{
 			Pkg:    cdxResteasyPack,
 			DepPkg: cdxReactiveCommonPack,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "2.13.4.Final",
-				Justification: isCDXDepJustifyDependsJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "2.13.4.Final",
+				Justification:  isCDXDepJustifyDependsJustification,
 			},
 		},
 	}
@@ -563,9 +747,22 @@ var (
 		},
 	}
 
+	CdxQuarkusHasSBOM = []assembler.HasSBOMIngest{
+		{
+			Pkg: cdxTopQuarkusPack,
+			HasSBOM: &model.HasSBOMInputSpec{
+				Uri:              "TestSource",
+				Algorithm:        "sha256",
+				Digest:           "036a9f51468f5ce6eec7c310583164ed0ab9f58d7c03380a3fe19d420609e3de",
+				DownloadLocation: "TestSource",
+			},
+		},
+	}
+
 	CdxQuarkusIngestionPredicates = assembler.IngestPredicates{
 		IsDependency: CdxQuarkusDeps,
 		IsOccurrence: CdxQuarkusOccurrence,
+		HasSBOM:      CdxQuarkusHasSBOM,
 	}
 
 	cdxWebAppPackage, _ = asmhelpers.PurlToPkg("pkg:npm/web-app@1.0.0")
@@ -577,17 +774,47 @@ var (
 			Pkg:    cdxWebAppPackage,
 			DepPkg: cdxBootstrapPackage,
 			IsDependency: &model.IsDependencyInputSpec{
-				VersionRange:  "4.0.0-beta.2",
-				Justification: isDepJustifyTopPkgJustification,
+				DependencyType: model.DependencyTypeUnknown,
+				VersionRange:   "4.0.0-beta.2",
+				Justification:  isDepJustifyTopPkgJustification,
+			},
+		},
+	}
+
+	CdxNpmHasSBOM = []assembler.HasSBOMIngest{
+		{
+			Pkg: cdxWebAppPackage,
+			HasSBOM: &model.HasSBOMInputSpec{
+				Uri:              "TestSource",
+				Algorithm:        "sha256",
+				Digest:           "35363f03c80f26a88db6f2400771bdcc6624bb7b61b96da8503be0f757605fde",
+				DownloadLocation: "TestSource",
 			},
 		},
 	}
 
 	CdxNpmIngestionPredicates = assembler.IngestPredicates{
 		IsDependency: CdxNpmDeps,
+		HasSBOM:      CdxNpmHasSBOM,
 	}
 
-	CdxEmptyIngestionPredicates = assembler.IngestPredicates{}
+	quarkusParentPackage, _ = asmhelpers.PurlToPkg("pkg:maven/io.quarkus/quarkus-parent@999-SNAPSHOT?type=pom")
+
+	quarkusParentPackageHasSBOM = []assembler.HasSBOMIngest{
+		{
+			Pkg: quarkusParentPackage,
+			HasSBOM: &model.HasSBOMInputSpec{
+				Uri:              "TestSource",
+				Algorithm:        "sha256",
+				Digest:           "fcd4d1f9c83c274fbc2dabdca4e7de749b23fab1aa15dc2854880a13479fa74e",
+				DownloadLocation: "TestSource",
+			},
+		},
+	}
+
+	CdxEmptyIngestionPredicates = assembler.IngestPredicates{
+		HasSBOM: quarkusParentPackageHasSBOM,
+	}
 
 	// ceritifer testdata
 
@@ -885,247 +1112,780 @@ var (
 
 	// Deps.dev
 
+	CollectedPypiWheelAxle = `{
+		"CurrentPackage":{
+		   "name":"wheel-axle-runtime",
+		   "namespace":"",
+		   "qualifiers":null,
+		   "subpath":"",
+		   "type":"pypi",
+		   "version":"0.0.4.dev20230415195356"
+		},
+		"DepPackages":[
+		   {
+			  "CurrentPackage":{
+				 "name":"filelock",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"pypi",
+				 "version":"3.12.0"
+			  },
+			  "DepPackages":null,
+			  "IsDepPackages":null,
+			  "Scorecard":{
+				 "aggregateScore":6.300000190734863,
+				 "checks":[
+					{
+					   "check":"Maintained",
+					   "score":10
+					},
+					{
+					   "check":"CII-Best-Practices",
+					   "score":0
+					},
+					{
+					   "check":"License",
+					   "score":9
+					},
+					{
+					   "check":"Security-Policy",
+					   "score":10
+					},
+					{
+					   "check":"Token-Permissions",
+					   "score":0
+					},
+					{
+					   "check":"Dangerous-Workflow",
+					   "score":10
+					},
+					{
+					   "check":"Pinned-Dependencies",
+					   "score":7
+					},
+					{
+					   "check":"Binary-Artifacts",
+					   "score":10
+					},
+					{
+					   "check":"Vulnerabilities",
+					   "score":10
+					},
+					{
+					   "check":"Fuzzing",
+					   "score":10
+					},
+					{
+					   "check":"Signed-Releases",
+					   "score":-1
+					},
+					{
+					   "check":"Branch-Protection",
+					   "score":0
+					},
+					{
+					   "check":"Packaging",
+					   "score":10
+					}
+				 ],
+				 "collector":"",
+				 "origin":"",
+				 "scorecardCommit":"6c5de2c32a4b8f60211e8e8eb94f8d3370a11b93",
+				 "scorecardVersion":"v4.10.5-77-g6c5de2c",
+				 "timeScanned":"2022-11-21T17:45:50.52Z"
+			  },
+			  "Source":{
+				 "commit":null,
+				 "name":"py-filelock",
+				 "namespace":"github.com/tox-dev",
+				 "tag":null,
+				 "type":"git"
+			  },
+			  "UpdateTime":"2022-11-21T17:45:50.52Z"
+		   }
+		],
+		"IsDepPackages":[
+		   {
+			  "CurrentPackageInput":{
+				 "name":"wheel-axle-runtime",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"pypi",
+				 "version":"0.0.4.dev20230415195356"
+			  },
+			  "DepPackageInput":{
+				 "name":"filelock",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"pypi",
+				 "version":"3.12.0"
+			  },
+			  "IsDependency":{
+				 "collector":"",
+				 "dependencyType":"DIRECT",
+				 "justification":"dependency data collected via deps.dev",
+				 "origin":"",
+				 "versionRange":""
+			  }
+		   }
+		],
+		"Scorecard":{
+		   "aggregateScore":4.800000190734863,
+		   "checks":[
+			  {
+				 "check":"Maintained",
+				 "score":6
+			  },
+			  {
+				 "check":"CII-Best-Practices",
+				 "score":0
+			  },
+			  {
+				 "check":"License",
+				 "score":10
+			  },
+			  {
+				 "check":"Signed-Releases",
+				 "score":-1
+			  },
+			  {
+				 "check":"Branch-Protection",
+				 "score":-1
+			  },
+			  {
+				 "check":"Packaging",
+				 "score":-1
+			  },
+			  {
+				 "check":"Pinned-Dependencies",
+				 "score":7
+			  },
+			  {
+				 "check":"Dangerous-Workflow",
+				 "score":10
+			  },
+			  {
+				 "check":"Binary-Artifacts",
+				 "score":9
+			  },
+			  {
+				 "check":"Token-Permissions",
+				 "score":0
+			  },
+			  {
+				 "check":"Fuzzing",
+				 "score":0
+			  },
+			  {
+				 "check":"Vulnerabilities",
+				 "score":10
+			  },
+			  {
+				 "check":"Security-Policy",
+				 "score":0
+			  }
+		   ],
+		   "collector":"",
+		   "origin":"",
+		   "scorecardCommit":"4e95816f4f0510f29ac1e680f4bea4cbe9666b1d",
+		   "scorecardVersion":"v4.10.5-72-g4e95816",
+		   "timeScanned":"2022-11-21T17:45:50.52Z"
+		},
+		"Source":{
+		   "commit":null,
+		   "name":"wheel-axle-runtime",
+		   "namespace":"github.com/karellen",
+		   "tag":null,
+		   "type":"git"
+		},
+		"UpdateTime":"2022-11-21T17:45:50.52Z"
+	 }`
+
+	CollectedMavenWebJars = `{
+		"CurrentPackage":{
+		   "name":"a",
+		   "namespace":"org.webjars.npm",
+		   "qualifiers":null,
+		   "subpath":"",
+		   "type":"maven",
+		   "version":"2.1.2"
+		},
+		"DepPackages":null,
+		"IsDepPackages":null,
+		"Scorecard":{
+		   "aggregateScore":5,
+		   "checks":[
+			  {
+				 "check":"Maintained",
+				 "score":0
+			  },
+			  {
+				 "check":"CII-Best-Practices",
+				 "score":0
+			  },
+			  {
+				 "check":"License",
+				 "score":0
+			  },
+			  {
+				 "check":"Signed-Releases",
+				 "score":-1
+			  },
+			  {
+				 "check":"Binary-Artifacts",
+				 "score":10
+			  },
+			  {
+				 "check":"Token-Permissions",
+				 "score":10
+			  },
+			  {
+				 "check":"Packaging",
+				 "score":-1
+			  },
+			  {
+				 "check":"Dangerous-Workflow",
+				 "score":10
+			  },
+			  {
+				 "check":"Branch-Protection",
+				 "score":0
+			  },
+			  {
+				 "check":"Pinned-Dependencies",
+				 "score":10
+			  },
+			  {
+				 "check":"Fuzzing",
+				 "score":0
+			  },
+			  {
+				 "check":"Security-Policy",
+				 "score":0
+			  },
+			  {
+				 "check":"Vulnerabilities",
+				 "score":10
+			  }
+		   ],
+		   "collector":"",
+		   "origin":"",
+		   "scorecardCommit":"1c441f3773712e6d12de6b353c25b4c093c11015",
+		   "scorecardVersion":"v4.10.5-58-g1c441f3",
+		   "timeScanned":"2022-11-21T17:45:50.52Z"
+		},
+		"Source":{
+		   "commit":null,
+		   "name":"a",
+		   "namespace":"github.com/alfateam",
+		   "tag":null,
+		   "type":"git"
+		},
+		"UpdateTime":"2022-11-21T17:45:50.52Z"
+	 }`
+
+	CollectedNPMReact = `{
+		"CurrentPackage":{
+		   "name":"react",
+		   "namespace":"",
+		   "qualifiers":null,
+		   "subpath":"",
+		   "type":"npm",
+		   "version":"17.0.0"
+		},
+		"DepPackages":[
+		   {
+			  "CurrentPackage":{
+				 "name":"js-tokens",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"4.0.0"
+			  },
+			  "DepPackages":null,
+			  "IsDepPackages":null,
+			  "Scorecard":null,
+			  "Source":{
+				 "commit":null,
+				 "name":"js-tokens.git",
+				 "namespace":"github.com/lydell",
+				 "tag":null,
+				 "type":"git"
+			  },
+			  "UpdateTime":"2022-11-21T17:45:50.52Z"
+		   },
+		   {
+			  "CurrentPackage":{
+				 "name":"loose-envify",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"1.4.0"
+			  },
+			  "DepPackages":null,
+			  "IsDepPackages":null,
+			  "Scorecard":null,
+			  "Source":null,
+			  "UpdateTime":"2022-11-21T17:45:50.52Z"
+		   },
+		   {
+			  "CurrentPackage":{
+				 "name":"object-assign",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"4.1.1"
+			  },
+			  "DepPackages":null,
+			  "IsDepPackages":null,
+			  "Scorecard":null,
+			  "Source":{
+				 "commit":null,
+				 "name":"object-assign.git",
+				 "namespace":"github.com/sindresorhus",
+				 "tag":null,
+				 "type":"git"
+			  },
+			  "UpdateTime":"2022-11-21T17:45:50.52Z"
+		   }
+		],
+		"IsDepPackages":[
+		   {
+			  "CurrentPackageInput":{
+				 "name":"react",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"17.0.0"
+			  },
+			  "DepPackageInput":{
+				 "name":"loose-envify",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"1.4.0"
+			  },
+			  "IsDependency":{
+				 "collector":"",
+				 "dependencyType":"DIRECT",
+				 "justification":"dependency data collected via deps.dev",
+				 "origin":"",
+				 "versionRange":"^1.1.0"
+			  }
+		   },
+		   {
+			  "CurrentPackageInput":{
+				 "name":"react",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"17.0.0"
+			  },
+			  "DepPackageInput":{
+				 "name":"object-assign",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"4.1.1"
+			  },
+			  "IsDependency":{
+				 "collector":"",
+				 "dependencyType":"DIRECT",
+				 "justification":"dependency data collected via deps.dev",
+				 "origin":"",
+				 "versionRange":"^4.1.1"
+			  }
+		   },
+		   {
+			  "CurrentPackageInput":{
+				 "name":"loose-envify",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"1.4.0"
+			  },
+			  "DepPackageInput":{
+				 "name":"js-tokens",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"4.0.0"
+			  },
+			  "IsDependency":{
+				 "collector":"",
+				 "dependencyType":"DIRECT",
+				 "justification":"dependency data collected via deps.dev",
+				 "origin":"",
+				 "versionRange":"^3.0.0 || ^4.0.0"
+			  }
+		   }
+		],
+		"Scorecard":null,
+		"Source":{
+		   "commit":null,
+		   "name":"react.git",
+		   "namespace":"github.com/facebook",
+		   "tag":null,
+		   "type":"git"
+		},
+		"UpdateTime":"2022-11-21T17:45:50.52Z"
+	 }`
+
+	CollectedGoLangMakeNowJust = `{
+		"CurrentPackage":{
+		   "name":"heredoc",
+		   "namespace":"github.com/makenowjust",
+		   "qualifiers":null,
+		   "subpath":"",
+		   "type":"golang",
+		   "version":"v1.0.0"
+		},
+		"DepPackages":null,
+		"IsDepPackages":null,
+		"Scorecard":{
+		   "aggregateScore":4.300000190734863,
+		   "checks":[
+			  {
+				 "check":"Maintained",
+				 "score":0
+			  },
+			  {
+				 "check":"CII-Best-Practices",
+				 "score":0
+			  },
+			  {
+				 "check":"License",
+				 "score":10
+			  },
+			  {
+				 "check":"Signed-Releases",
+				 "score":-1
+			  },
+			  {
+				 "check":"Binary-Artifacts",
+				 "score":10
+			  },
+			  {
+				 "check":"Packaging",
+				 "score":-1
+			  },
+			  {
+				 "check":"Token-Permissions",
+				 "score":0
+			  },
+			  {
+				 "check":"Dangerous-Workflow",
+				 "score":10
+			  },
+			  {
+				 "check":"Branch-Protection",
+				 "score":0
+			  },
+			  {
+				 "check":"Pinned-Dependencies",
+				 "score":9
+			  },
+			  {
+				 "check":"Vulnerabilities",
+				 "score":10
+			  },
+			  {
+				 "check":"Fuzzing",
+				 "score":0
+			  },
+			  {
+				 "check":"Security-Policy",
+				 "score":0
+			  }
+		   ],
+		   "collector":"",
+		   "origin":"",
+		   "scorecardCommit":"1c441f3773712e6d12de6b353c25b4c093c11015",
+		   "scorecardVersion":"v4.10.5-58-g1c441f3",
+		   "timeScanned":"2022-11-21T17:45:50.52Z"
+		},
+		"Source":{
+		   "commit":null,
+		   "name":"heredoc",
+		   "namespace":"github.com/makenowjust",
+		   "tag":null,
+		   "type":"git"
+		},
+		"UpdateTime":"2022-11-21T17:45:50.52Z"
+	 }`
+
 	CollectedForeignTypes = `{
-	"CurrentPackage":{
-	   "type":"cargo",
-	   "namespace":"",
-	   "name":"foreign-types",
-	   "version":"0.3.2",
-	   "qualifiers":null,
-	   "subpath":""
-	},
-	"Source":{
-	   "type":"git",
-	   "namespace":"github.com/sfackler",
-	   "name":"foreign-types",
-	   "tag":null,
-	   "commit":null
-	},
-	"Vulnerabilities":null,
-	"Scorecard":{
-	   "checks":[
-		  {
-			 "check":"Code-Review",
-			 "score":2
-		  },
-		  {
-			 "check":"Maintained",
-			 "score":0
-		  },
-		  {
-			 "check":"CII-Best-Practices",
-			 "score":0
-		  },
-		  {
-			 "check":"Vulnerabilities",
-			 "score":10
-		  },
-		  {
-			 "check":"Signed-Releases",
-			 "score":-1
-		  },
-		  {
-			 "check":"Branch-Protection",
-			 "score":0
-		  },
-		  {
-			 "check":"License",
-			 "score":10
-		  },
-		  {
-			 "check":"Pinned-Dependencies",
-			 "score":7
-		  },
-		  {
-			 "check":"Binary-Artifacts",
-			 "score":10
-		  },
-		  {
-			 "check":"Token-Permissions",
-			 "score":0
-		  },
-		  {
-			 "check":"Dangerous-Workflow",
-			 "score":10
-		  },
-		  {
-			 "check":"SAST",
-			 "score":0
-		  },
-		  {
-			 "check":"Packaging",
-			 "score":-1
-		  },
-		  {
-			 "check":"Dependency-Update-Tool",
-			 "score":0
-		  },
-		  {
-			 "check":"Fuzzing",
-			 "score":0
-		  },
-		  {
-			 "check":"Security-Policy",
-			 "score":0
-		  }
-	   ],
-	   "aggregateScore":3.700000047683716,
-	   "timeScanned":"2022-11-21T17:45:50.52Z",
-	   "scorecardVersion":"v4.8.0-78-gfb07860",
-	   "scorecardCommit":"fb07860d86065cdcbd2d0d5c6b998ff4542d53fe",
-	   "origin":"",
-	   "collector":""
-	},
-	"DepPackages":[
-	   {
-		  "CurrentPackage":{
-			 "type":"cargo",
-			 "namespace":"",
-			 "name":"foreign-types-shared",
-			 "version":"0.1.1",
-			 "qualifiers":[
-				
-			 ],
-			 "subpath":""
-		  },
-		  "Source":{
-			 "type":"git",
-			 "namespace":"github.com/sfackler",
-			 "name":"foreign-types",
-			 "tag":null,
-			 "commit":null
-		  },
-		  "Vulnerabilities":null,
-		  "Scorecard":{
-			 "checks":[
-				{
-				   "check":"Code-Review",
-				   "score":2
-				},
-				{
-				   "check":"Maintained",
-				   "score":0
-				},
-				{
-				   "check":"CII-Best-Practices",
-				   "score":0
-				},
-				{
-				   "check":"Vulnerabilities",
-				   "score":10
-				},
-				{
-				   "check":"Signed-Releases",
-				   "score":-1
-				},
-				{
-				   "check":"Branch-Protection",
-				   "score":0
-				},
-				{
-				   "check":"License",
-				   "score":10
-				},
-				{
-				   "check":"Pinned-Dependencies",
-				   "score":7
-				},
-				{
-				   "check":"Binary-Artifacts",
-				   "score":10
-				},
-				{
-				   "check":"Token-Permissions",
-				   "score":0
-				},
-				{
-				   "check":"Dangerous-Workflow",
-				   "score":10
-				},
-				{
-				   "check":"SAST",
-				   "score":0
-				},
-				{
-				   "check":"Packaging",
-				   "score":-1
-				},
-				{
-				   "check":"Dependency-Update-Tool",
-				   "score":0
-				},
-				{
-				   "check":"Fuzzing",
-				   "score":0
-				},
-				{
-				   "check":"Security-Policy",
-				   "score":0
-				}
-			 ],
-			 "aggregateScore":3.700000047683716,
-			 "timeScanned":"2022-11-21T17:45:50.52Z",
-			 "scorecardVersion":"v4.8.0-78-gfb07860",
-			 "scorecardCommit":"fb07860d86065cdcbd2d0d5c6b998ff4542d53fe",
-			 "origin":"",
-			 "collector":""
-		  },
-		  "DepPackages":null,
-		  "UpdateTime":"2022-11-21T17:45:50.52Z"
-	   }
-	],
-	"UpdateTime":"2022-11-21T17:45:50.52Z"
- }`
-	CollectedYargsParser = `
- {
-	 "CurrentPackage":{
-		"type":"npm",
-		"namespace":"",
-		"name":"yargs-parser",
-		"version":"4.2.1",
-		"qualifiers":null,
-		"subpath":""
-	 },
-	 "Source":{
-		"type":"git",
-		"namespace":"github.com/yargs",
-		"name":"yargs-parser.git",
-		"tag":null,
-		"commit":null
-	 },
-	 "Vulnerabilities":[
-		{
-		   "osvId":"GHSA-p9pc-299p-vxgp"
-		}
-	 ],
-	 "Scorecard":null,
-	 "DepPackages":[
-		{
-		   "CurrentPackage":{
-			  "type":"npm",
-			  "namespace":"",
-			  "name":"camelcase",
-			  "version":"3.0.0",
-			  "qualifiers":[
-				 
-			  ],
-			  "subpath":""
-		   },
-		   "Source":{
-			  "type":"git",
-			  "namespace":"github.com/sindresorhus",
-			  "name":"camelcase.git",
-			  "tag":null,
-			  "commit":null
-		   },
-		   "Vulnerabilities":null,
-		   "Scorecard":null,
-		   "DepPackages":null,
-		   "UpdateTime":"2022-11-21T17:45:50.52Z"
-		}
-	 ],
-	 "UpdateTime":"2022-11-21T17:45:50.52Z"
-  }`
+		"CurrentPackage":{
+		   "name":"foreign-types",
+		   "namespace":"",
+		   "qualifiers":null,
+		   "subpath":"",
+		   "type":"cargo",
+		   "version":"0.3.2"
+		},
+		"DepPackages":[
+		   {
+			  "CurrentPackage":{
+				 "name":"foreign-types-shared",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"cargo",
+				 "version":"0.1.1"
+			  },
+			  "DepPackages":null,
+			  "IsDepPackages":null,
+			  "Scorecard":{
+				 "aggregateScore":4.599999904632568,
+				 "checks":[
+					{
+					   "check":"Maintained",
+					   "score":5
+					},
+					{
+					   "check":"CII-Best-Practices",
+					   "score":0
+					},
+					{
+					   "check":"Signed-Releases",
+					   "score":-1
+					},
+					{
+					   "check":"Packaging",
+					   "score":-1
+					},
+					{
+					   "check":"Dangerous-Workflow",
+					   "score":10
+					},
+					{
+					   "check":"Binary-Artifacts",
+					   "score":10
+					},
+					{
+					   "check":"Token-Permissions",
+					   "score":0
+					},
+					{
+					   "check":"Pinned-Dependencies",
+					   "score":7
+					},
+					{
+					   "check":"Fuzzing",
+					   "score":0
+					},
+					{
+					   "check":"Vulnerabilities",
+					   "score":10
+					},
+					{
+					   "check":"Branch-Protection",
+					   "score":0
+					},
+					{
+					   "check":"License",
+					   "score":10
+					},
+					{
+					   "check":"Security-Policy",
+					   "score":0
+					}
+				 ],
+				 "collector":"",
+				 "origin":"",
+				 "scorecardCommit":"6c5de2c32a4b8f60211e8e8eb94f8d3370a11b93",
+				 "scorecardVersion":"v4.10.5-77-g6c5de2c",
+				 "timeScanned":"2022-11-21T17:45:50.52Z"
+			  },
+			  "Source":{
+				 "commit":null,
+				 "name":"foreign-types",
+				 "namespace":"github.com/sfackler",
+				 "tag":null,
+				 "type":"git"
+			  },
+			  "UpdateTime":"2022-11-21T17:45:50.52Z"
+		   }
+		],
+		"IsDepPackages":[
+		   {
+			  "CurrentPackageInput":{
+				 "name":"foreign-types",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"cargo",
+				 "version":"0.3.2"
+			  },
+			  "DepPackageInput":{
+				 "name":"foreign-types-shared",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"cargo",
+				 "version":"0.1.1"
+			  },
+			  "IsDependency":{
+				 "collector":"",
+				 "dependencyType":"DIRECT",
+				 "justification":"dependency data collected via deps.dev",
+				 "origin":"",
+				 "versionRange":"^0.1"
+			  }
+		   }
+		],
+		"Scorecard":{
+		   "aggregateScore":4.599999904632568,
+		   "checks":[
+			  {
+				 "check":"Maintained",
+				 "score":5
+			  },
+			  {
+				 "check":"CII-Best-Practices",
+				 "score":0
+			  },
+			  {
+				 "check":"Signed-Releases",
+				 "score":-1
+			  },
+			  {
+				 "check":"Packaging",
+				 "score":-1
+			  },
+			  {
+				 "check":"Dangerous-Workflow",
+				 "score":10
+			  },
+			  {
+				 "check":"Binary-Artifacts",
+				 "score":10
+			  },
+			  {
+				 "check":"Token-Permissions",
+				 "score":0
+			  },
+			  {
+				 "check":"Pinned-Dependencies",
+				 "score":7
+			  },
+			  {
+				 "check":"Fuzzing",
+				 "score":0
+			  },
+			  {
+				 "check":"Vulnerabilities",
+				 "score":10
+			  },
+			  {
+				 "check":"Branch-Protection",
+				 "score":0
+			  },
+			  {
+				 "check":"License",
+				 "score":10
+			  },
+			  {
+				 "check":"Security-Policy",
+				 "score":0
+			  }
+		   ],
+		   "collector":"",
+		   "origin":"",
+		   "scorecardCommit":"6c5de2c32a4b8f60211e8e8eb94f8d3370a11b93",
+		   "scorecardVersion":"v4.10.5-77-g6c5de2c",
+		   "timeScanned":"2022-11-21T17:45:50.52Z"
+		},
+		"Source":{
+		   "commit":null,
+		   "name":"foreign-types",
+		   "namespace":"github.com/sfackler",
+		   "tag":null,
+		   "type":"git"
+		},
+		"UpdateTime":"2022-11-21T17:45:50.52Z"
+	 }`
+	CollectedYargsParser = `{
+		"CurrentPackage":{
+		   "name":"yargs-parser",
+		   "namespace":"",
+		   "qualifiers":null,
+		   "subpath":"",
+		   "type":"npm",
+		   "version":"4.2.1"
+		},
+		"DepPackages":[
+		   {
+			  "CurrentPackage":{
+				 "name":"camelcase",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"3.0.0"
+			  },
+			  "DepPackages":null,
+			  "IsDepPackages":null,
+			  "Scorecard":null,
+			  "Source":{
+				 "commit":null,
+				 "name":"camelcase.git",
+				 "namespace":"github.com/sindresorhus",
+				 "tag":null,
+				 "type":"git"
+			  },
+			  "UpdateTime":"2022-11-21T17:45:50.52Z"
+		   }
+		],
+		"IsDepPackages":[
+		   {
+			  "CurrentPackageInput":{
+				 "name":"yargs-parser",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"4.2.1"
+			  },
+			  "DepPackageInput":{
+				 "name":"camelcase",
+				 "namespace":"",
+				 "qualifiers":null,
+				 "subpath":"",
+				 "type":"npm",
+				 "version":"3.0.0"
+			  },
+			  "IsDependency":{
+				 "collector":"",
+				 "dependencyType":"DIRECT",
+				 "justification":"dependency data collected via deps.dev",
+				 "origin":"",
+				 "versionRange":"^3.0.0"
+			  }
+		   }
+		],
+		"Scorecard":null,
+		"Source":{
+		   "commit":null,
+		   "name":"yargs-parser.git",
+		   "namespace":"github.com/yargs",
+		   "tag":null,
+		   "type":"git"
+		},
+		"UpdateTime":"2022-11-21T17:45:50.52Z"
+	 }`
 )
 
 func GuacNodeSliceEqual(slice1, slice2 []assembler.GuacNode) bool {

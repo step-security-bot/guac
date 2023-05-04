@@ -16,117 +16,35 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
-	"github.com/guacsec/guac/pkg/logging"
+	"github.com/guacsec/guac/pkg/cli"
+	"github.com/guacsec/guac/pkg/version"
 
-	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var flags = struct {
-	dbAddr  string
-	gdbuser string
-	gdbpass string
-	realm   string
-
-	keyPath string
-	keyID   string
-
-	// collect-sub flags
-	collectSubAddr       string
-	collectSubListenPort int
-
-	// graphQL server flags
-	graphqlBackend string
-	graphqlPort    int
-	graphqlDebug   bool
-
-	// graphQL client flags
-	graphqlEndpoint string
-
-	// run as poll certifier
-	poll     bool
-	interval int
-}{}
-
-var cfgFile string
-
 func init() {
-	cobra.OnInitialize(initConfig)
-	persistentFlags := rootCmd.PersistentFlags()
-	persistentFlags.StringVar(&flags.dbAddr, "gdbaddr", "neo4j://localhost:7687", "address to neo4j db")
-	persistentFlags.StringVar(&flags.gdbuser, "gdbuser", "", "neo4j user credential to connect to graph db")
-	persistentFlags.StringVar(&flags.gdbpass, "gdbpass", "", "neo4j password credential to connect to graph db")
-	persistentFlags.StringVar(&flags.realm, "realm", "neo4j", "realm to connect to graph db")
-	persistentFlags.StringVar(&flags.keyPath, "verifier-keyPath", "", "path to pem file to verify dsse")
-	persistentFlags.StringVar(&flags.keyID, "verifier-keyID", "", "ID of the key to be stored")
+	cobra.OnInitialize(cli.InitConfig)
 
-	// collectsub flags
-	persistentFlags.StringVar(&flags.collectSubAddr, "csub-addr", "localhost:2782", "address to connect to collect-sub service")
-	persistentFlags.IntVar(&flags.collectSubListenPort, "csub-listen-port", 2782, "port to listen to on collect-sub service")
-
-	// graphql server flags
-	persistentFlags.StringVar(&flags.graphqlBackend, "gql-backend", "inmem", "backend used for graphql api server: [neo4j | inmem]")
-	persistentFlags.IntVar(&flags.graphqlPort, "gql-port", 8080, "port used for graphql api server")
-	persistentFlags.BoolVar(&flags.graphqlDebug, "gql-debug", false, "debug flag which enables the graphQL playground")
-
-	// graphql client flags
-	persistentFlags.StringVar(&flags.graphqlEndpoint, "gql-endpoint", "http://localhost:8080/query", "endpoint used to connect to graphQL server")
-
-	// certifier flags
-	persistentFlags.BoolVarP(&flags.poll, "poll", "p", true, "sets the certifier to polling mode")
-	persistentFlags.IntVarP(&flags.interval, "interval", "i", 5, "if polling set interval in minutes")
-
-	flagNames := []string{"gdbaddr", "gdbuser", "gdbpass", "realm",
-		"verifier-keyPath", "verifier-keyID",
-		"csub-addr", "csub-listen-port",
-		"gql-backend", "gql-port", "gql-debug", "gql-endpoint",
-		"poll", "interval",
+	set, err := cli.BuildFlags([]string{"gql-endpoint", "csub-addr"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to setup flag: %v", err)
+		os.Exit(1)
 	}
-	for _, name := range flagNames {
-		if flag := persistentFlags.Lookup(name); flag != nil {
-			if err := viper.BindPFlag(name, flag); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to bind flag: %v", err)
-				os.Exit(1)
-			}
-		}
-	}
-}
-
-func initConfig() {
-	ctx := logging.WithLogger(context.Background())
-	logger := logging.FromContext(ctx)
-
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		home, err := homedir.Dir()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to get user home directory: %v\n", err)
-			os.Exit(1)
-		}
-
-		viper.AddConfigPath(home)
-		viper.AddConfigPath(".")
-		viper.SetConfigName("guac")
-		viper.SetConfigType("yaml")
-	}
-
-	viper.AutomaticEnv()
-	viper.SetEnvPrefix("guac")
-
-	if err := viper.ReadInConfig(); err == nil {
-		logger.Infof("Using config file: %s", viper.ConfigFileUsed())
+	rootCmd.PersistentFlags().AddFlagSet(set)
+	if err := viper.BindPFlags(rootCmd.PersistentFlags()); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to bind flags: %v", err)
+		os.Exit(1)
 	}
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "guacone",
-	Short: "guacone is an all in one flow cmdline for GUAC",
+	Use:     "guacone",
+	Short:   "guacone is an all in one flow cmdline for GUAC",
+	Version: version.Version,
 }
 
 func Execute() {

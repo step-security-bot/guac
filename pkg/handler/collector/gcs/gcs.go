@@ -29,6 +29,7 @@ import (
 
 	"github.com/guacsec/guac/pkg/handler/processor"
 	"github.com/guacsec/guac/pkg/logging"
+	"github.com/guacsec/guac/pkg/version"
 )
 
 type gcs struct {
@@ -67,7 +68,9 @@ func NewGCSClient(ctx context.Context, poll bool, interval time.Duration) (*gcs,
 	if getCredsPath() == "" {
 		return nil, errors.New("gcs bucket not specified")
 	}
-	client, err := storage.NewClient(ctx, option.WithCredentialsFile(os.Getenv(gcsCredsEnv)))
+	client, err := storage.NewClient(ctx,
+		option.WithCredentialsFile(os.Getenv(gcsCredsEnv)),
+		option.WithUserAgent(version.UserAgent))
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +136,15 @@ func (g *gcs) RetrieveArtifacts(ctx context.Context, docChannel chan<- *processo
 
 	if g.poll {
 		for {
-			time.Sleep(g.interval)
 			err := gcsGetArtifacts()
 			if err != nil {
 				return err
+			}
+			select {
+			// If the context has been canceled it contains an err which we can throw.
+			case <-ctx.Done():
+				return ctx.Err() // nolint:wrapcheck
+			case <-time.After(g.interval):
 			}
 		}
 	} else {

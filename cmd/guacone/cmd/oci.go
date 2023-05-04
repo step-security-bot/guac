@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	csub_client "github.com/guacsec/guac/pkg/collectsub/client"
 	"github.com/guacsec/guac/pkg/collectsub/datasource"
 	"github.com/guacsec/guac/pkg/collectsub/datasource/inmemsource"
 	"github.com/guacsec/guac/pkg/handler/collector"
@@ -32,6 +33,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+type ociOptions struct {
+	graphqlEndpoint string
+	dataSource      datasource.CollectSource
+	csubAddr        string
+}
+
 var ociCmd = &cobra.Command{
 	Use:   "image [flags] image_path1 image_path2...",
 	Short: "takes images to download sbom and attestation stored in OCI to add to GUAC graph, this command talks directly to the graphQL endpoint",
@@ -41,10 +48,8 @@ var ociCmd = &cobra.Command{
 		logger := logging.FromContext(ctx)
 
 		opts, err := validateOCIFlags(
-			viper.GetString("gdbuser"),
-			viper.GetString("gdbpass"),
-			viper.GetString("gdbaddr"),
-			viper.GetString("realm"),
+			viper.GetString("gql-endpoint"),
+			viper.GetString("csub-addr"),
 			args)
 		if err != nil {
 			fmt.Printf("unable to validate flags: %v\n", err)
@@ -59,22 +64,20 @@ var ociCmd = &cobra.Command{
 			logger.Errorf("unable to register oci collector: %v", err)
 		}
 
+		// initialize collectsub client
+		csubClient, err := csub_client.NewClient(opts.csubAddr)
+		if err != nil {
+			logger.Infof("collectsub client initialization failed, this ingestion will not pull in any additional data through the collectsub service: %w", err)
+			csubClient = nil
+		} else {
+			defer csubClient.Close()
+		}
+
 		// Get pipeline of components
-		processorFunc, err := getProcessor(ctx)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-		ingestorFunc, err := getIngestor(ctx)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-		assemblerFunc, err := getAssembler(ctx, opts)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
+		processorFunc := getProcessor(ctx)
+		ingestorFunc := getIngestor(ctx)
+		collectSubEmitFunc := getCollectSubEmit(ctx, csubClient)
+		assemblerFunc := getAssembler(ctx, opts.graphqlEndpoint)
 
 		totalNum := 0
 		gotErr := false
@@ -89,13 +92,18 @@ var ociCmd = &cobra.Command{
 				return fmt.Errorf("unable to process doc: %v, fomat: %v, document: %v", err, d.Format, d.Type)
 			}
 
-			graphs, err := ingestorFunc(docTree)
+			predicates, idstrings, err := ingestorFunc(docTree)
 			if err != nil {
 				gotErr = true
 				return fmt.Errorf("unable to ingest doc tree: %v", err)
 			}
 
-			err = assemblerFunc(graphs)
+			err = collectSubEmitFunc(idstrings)
+			if err != nil {
+				logger.Infof("unable to create entries in collectsub server, but continuing: %v", err)
+			}
+
+			err = assemblerFunc(predicates)
 			if err != nil {
 				gotErr = true
 				return fmt.Errorf("unable to assemble graphs: %v", err)
@@ -127,12 +135,10 @@ var ociCmd = &cobra.Command{
 	},
 }
 
-func validateOCIFlags(user string, pass string, dbAddr string, realm string, args []string) (options, error) {
-	var opts options
-	opts.user = user
-	opts.pass = pass
-	opts.dbAddr = dbAddr
-	opts.realm = realm
+func validateOCIFlags(gqlEndpoint string, csubAddr string, args []string) (ociOptions, error) {
+	var opts ociOptions
+	opts.graphqlEndpoint = gqlEndpoint
+	opts.csubAddr = csubAddr
 
 	if len(args) < 1 {
 		return opts, fmt.Errorf("expected positional argument for image_path")
@@ -159,5 +165,5 @@ func validateOCIFlags(user string, pass string, dbAddr string, realm string, arg
 }
 
 func init() {
-	rootCmd.AddCommand(ociCmd)
+	collectCmd.AddCommand(ociCmd)
 }

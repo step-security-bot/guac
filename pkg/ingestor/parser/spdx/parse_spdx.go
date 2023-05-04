@@ -73,16 +73,13 @@ func (s *spdxParser) Parse(ctx context.Context, doc *processor.Document) error {
 func (s *spdxParser) getTopLevelPackage() error {
 	// TODO: Add CertifyPkg to make a connection from GUAC purl to OCI purl guessed
 	// oci purl: pkg:oci/debian@sha256%3A244fd47e07d10?repository_url=ghcr.io/debian&tag=bullseye
-	splitImage := strings.Split(s.spdxDoc.DocumentName, "/")
+
+	// TODO (dejanb): do a quick check for SPDX to see if there are any "DESCRIBES" relationships
+	// from the document and omit this top level heuristic package otherwise.
 
 	// Currently create TopLevel package as well in some cases where we guess that the SPDX document
 	// may not encode it
-	var purl string
-	if len(splitImage) == 3 {
-		purl = "pkg:guac/spdx/" + s.spdxDoc.DocumentName
-	} else if len(splitImage) == 2 {
-		purl = "pkg:guac/spdx/" + s.spdxDoc.DocumentName
-	}
+	var purl string = "pkg:guac/spdx/" + s.spdxDoc.DocumentName
 
 	if purl != "" {
 		topPackage, err := asmhelpers.PurlToPkg(purl)
@@ -188,6 +185,7 @@ func (s *spdxParser) GetPredicates(ctx context.Context) *assembler.IngestPredica
 	// adding top level package edge manually for all depends on package
 	if toplevel != nil {
 		preds.IsDependency = append(preds.IsDependency, common.CreateTopLevelIsDeps(toplevel[0], s.packagePackages, s.filePackages, "top-level package GUAC heuristic connecting to each file/package")...)
+		preds.HasSBOM = append(preds.HasSBOM, common.CreateTopLevelHasSBOM(toplevel[0], s.doc))
 	}
 	for _, rel := range s.spdxDoc.Relationships {
 		var foundId string
@@ -232,7 +230,7 @@ func (s *spdxParser) GetPredicates(ctx context.Context) *assembler.IngestPredica
 		}
 	}
 
-	// Create predicates for IsOccurence for all artifacts found
+	// Create predicates for IsOccurrence for all artifacts found
 	for id := range s.fileArtifacts {
 		for _, pkg := range s.filePackages[id] {
 			for _, art := range s.fileArtifacts[id] {

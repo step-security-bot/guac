@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -27,11 +30,19 @@ import (
 	"github.com/guacsec/guac/pkg/certifier/certify"
 	"github.com/guacsec/guac/pkg/certifier/components/root_package"
 	"github.com/guacsec/guac/pkg/certifier/osv"
+	csub_client "github.com/guacsec/guac/pkg/collectsub/client"
 	"github.com/guacsec/guac/pkg/handler/processor"
 	"github.com/guacsec/guac/pkg/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+type osvOptions struct {
+	graphqlEndpoint string
+	poll            bool
+	csubAddr        string
+	interval        time.Duration
+}
 
 var osvCmd = &cobra.Command{
 	Use:   "osv [flags]",
@@ -41,13 +52,10 @@ var osvCmd = &cobra.Command{
 		logger := logging.FromContext(ctx)
 
 		opts, err := validateOSVFlags(
-			viper.GetString("gdbuser"),
-			viper.GetString("gdbpass"),
-			viper.GetString("gdbaddr"),
-			viper.GetString("realm"),
 			viper.GetString("gql-endpoint"),
 			viper.GetBool("poll"),
-			viper.GetInt("interval"),
+			viper.GetString("interval"),
+			viper.GetString("csub-addr"),
 		)
 
 		if err != nil {
@@ -60,31 +68,22 @@ var osvCmd = &cobra.Command{
 			logger.Fatalf("unable to register certifier: %w", err)
 		}
 
+		// initialize collectsub client
+		csubClient, err := csub_client.NewClient(opts.csubAddr)
+		if err != nil {
+			logger.Infof("collectsub client initialization failed, this ingestion will not pull in any additional data through the collectsub service: %w", err)
+			csubClient = nil
+		} else {
+			defer csubClient.Close()
+		}
+
 		httpClient := http.Client{}
 		gqlclient := graphql.NewClient(opts.graphqlEndpoint, &httpClient)
-
-		processorFunc, err := getProcessor(ctx)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-
-		ingestorFunc, err := getIngestor(ctx)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-		assemblerFunc, err := getAssembler(ctx, opts)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-
-		packageQueryFunc, err := getPackageQuery(gqlclient)
-		if err != nil {
-			logger.Errorf("error: %v", err)
-			os.Exit(1)
-		}
+		processorFunc := getProcessor(ctx)
+		ingestorFunc := getIngestor(ctx)
+		collectSubEmitFunc := getCollectSubEmit(ctx, csubClient)
+		assemblerFunc := getAssembler(ctx, opts.graphqlEndpoint)
+		packageQuery := root_package.NewPackageQuery(gqlclient, 0)
 
 		totalNum := 0
 		gotErr := false
@@ -99,13 +98,18 @@ var osvCmd = &cobra.Command{
 				return fmt.Errorf("unable to process doc: %v, fomat: %v, document: %v", err, d.Format, d.Type)
 			}
 
-			graphs, err := ingestorFunc(docTree)
+			predicates, idstrings, err := ingestorFunc(docTree)
 			if err != nil {
 				gotErr = true
 				return fmt.Errorf("unable to ingest doc tree: %v", err)
 			}
 
-			err = assemblerFunc(graphs)
+			err = collectSubEmitFunc(idstrings)
+			if err != nil {
+				logger.Infof("unable to create entries in collectsub server, but continuing: %v", err)
+			}
+
+			err = assemblerFunc(predicates)
 			if err != nil {
 				gotErr = true
 				return fmt.Errorf("unable to assemble graphs: %v", err)
@@ -123,40 +127,55 @@ var osvCmd = &cobra.Command{
 				return true
 			}
 			logger.Errorf("certifier ended with error: %v", err)
-			return false
+			gotErr = true
+			// process documents already captures
+			return true
 		}
 
-		if err := certify.Certify(ctx, packageQueryFunc(), emit, errHandler, opts.poll, time.Minute*time.Duration(opts.interval)); err != nil {
-			logger.Fatal(err)
+		ctx, cf := context.WithCancel(ctx)
+		var wg sync.WaitGroup
+		done := make(chan bool, 1)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := certify.Certify(ctx, packageQuery, emit, errHandler, opts.poll, opts.interval); err != nil {
+				logger.Errorf("Unhandled error in the certifier: %s", err)
+			}
+			done <- true
+		}()
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		select {
+		case s := <-sigs:
+			logger.Infof("Signal received: %s, shutting down gracefully\n", s.String())
+		case <-done:
+			logger.Infof("All certifiers completed")
 		}
+		cf()
+		wg.Wait()
+
 		if gotErr {
-			logger.Fatalf("completed ingestion with errors")
+			logger.Errorf("completed ingestion with errors")
 		} else {
 			logger.Infof("completed ingesting %v documents", totalNum)
 		}
 	},
 }
 
-func validateOSVFlags(user string, pass string, dbAddr string, realm string, graphqlEndpoint string, poll bool, interval int) (options, error) {
-	var opts options
-	opts.user = user
-	opts.pass = pass
-	opts.dbAddr = dbAddr
-	opts.realm = realm
+func validateOSVFlags(graphqlEndpoint string, poll bool, interval string, csubAddr string) (osvOptions, error) {
+	var opts osvOptions
 	opts.graphqlEndpoint = graphqlEndpoint
 	opts.poll = poll
-	opts.interval = interval
+	i, err := time.ParseDuration(interval)
+	if err != nil {
+		return opts, err
+	}
+	opts.interval = i
+	opts.csubAddr = csubAddr
 
 	return opts, nil
 }
 
-func getPackageQuery(client graphql.Client) (func() certifier.QueryComponents, error) {
-	return func() certifier.QueryComponents {
-		packageQuery := root_package.NewPackageQuery(client, 0)
-		return packageQuery
-	}, nil
-}
-
 func init() {
-	rootCmd.AddCommand(osvCmd)
+	certifierCmd.AddCommand(osvCmd)
 }

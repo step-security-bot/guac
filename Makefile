@@ -1,11 +1,13 @@
 VERSION=$(shell git describe --tags --always)
 COMMIT=$(shell git rev-parse HEAD)
 BUILD=$(shell date +%FT%T%z)
-PKG=github.com/guacsec/guac
+PKG=github.com/guacsec/guac/pkg/version
 
-LDFLAGS="-X $(PKG).version=$(VERSION) -X $(PKG).commit=$(COMMIT) -X $(PKG).date=$(BUILD)"
+LDFLAGS="-X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).Date=$(BUILD)"
 
 .DEFAULT_GOAL := build
+
+CONTAINER ?= docker
 
 .PHONY: all
 all: test cover fmt lint build generate
@@ -51,14 +53,14 @@ lint: check-golangci-lint-tool-check
 # Build a version
 .PHONY: build
 build: generate
-	go build -ldflags ${LDFLAGS} -o bin/collector cmd/collector/main.go
-	go build -ldflags ${LDFLAGS} -o bin/ingest cmd/ingest/main.go
+	go build -ldflags ${LDFLAGS} -o bin/guaccollect cmd/guaccollect/main.go
+	go build -ldflags ${LDFLAGS} -o bin/guacingest cmd/guacingest/main.go
 	go build -ldflags ${LDFLAGS} -o bin/guacone cmd/guacone/main.go
-	go build -ldflags ${LDFLAGS} -o bin/pubsub_test cmd/pubsub_test/main.go
-	go build -ldflags ${LDFLAGS} -o bin/graphql_playground cmd/graphql_playground/main.go
+	go build -ldflags ${LDFLAGS} -o bin/guacgql cmd/guacgql/main.go
+	go build -ldflags ${LDFLAGS} -o bin/guaccsub cmd/guaccsub/main.go
 
 .PHONY: proto
-proto: 
+proto:
 	protoc --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		pkg/collectsub/collectsub/collectsub.proto
@@ -92,8 +94,8 @@ generate:
 
 .PHONY: container
 container: check-docker-tool-check
-	docker build -f dockerfiles/Dockerfile.guac-cont -t local-organic-guac .
-	docker build -f dockerfiles/Dockerfile.healthcheck -t local-healthcheck .
+	$(CONTAINER) build -f dockerfiles/Dockerfile.guac-cont -t local-organic-guac .
+	$(CONTAINER) build -f dockerfiles/Dockerfile.healthcheck -t local-healthcheck .
 
 
 # To run the service, run `make container` and then `make service`
@@ -104,17 +106,17 @@ start-service:
 	# not handle that well.
 	#
 	# if container images are missing, run `make container` first
-	docker compose up --force-recreate	
+	$(CONTAINER) compose up --force-recreate
 
 # to flush state, service-stop must be used else state is taken from old containers
 .PHONY: stop-service
 stop-service:
-	docker compose down
+	$(CONTAINER) compose down
 
 .PHONY: check-docker-tool-check
 check-docker-tool-check:
-	@if ! command -v docker &> /dev/null; then \
-		echo "Docker is not installed. Please install Docker and try again."; \
+	@if ! command -v $(CONTAINER) &> /dev/null; then \
+		echo "'$(CONTAINER)' is not installed. Please install '$(CONTAINER)' and try again. Or set the CONTAINER variable to a different container runtime engine."; \
 		exit 1; \
 	fi
 
